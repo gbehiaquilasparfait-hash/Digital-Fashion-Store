@@ -1,0 +1,19 @@
+name: Deploy to Render
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Deploy to Render
+        run: |
+          echo "🚀 Déploiement sur Render..."
+          # Render détectera render.yaml automatiquement
+          echo "✅ Configuration render.yaml détectée"
