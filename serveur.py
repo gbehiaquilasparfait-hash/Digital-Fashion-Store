@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File, F
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 import sqlite3
 import bcrypt
 import jwt
@@ -433,10 +433,13 @@ async def like_product(product_id: str, user=Depends(get_current_user), db=Depen
     return {"liked": liked}
 
 # ─── Route Santé ──────────────────────────────────────────────────────────────
+@app.get("/")
+async def accueil():
+    return FileResponse("index.html")
+
 @app.get("/api/health", tags=["System"])
 async def health_check():
     return {"status": "🟢 API en ligne", "version": "1.0.0"}
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=3000, log_level="info")
