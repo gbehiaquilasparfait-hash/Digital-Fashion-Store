@@ -8,7 +8,6 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, FileResponse
-import sqlite3
 import bcrypt
 import jwt
 import json
@@ -59,21 +58,31 @@ class ConnectionManager:
         self.active_connections.append(websocket)
 
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.discard(websocket)
+        # FIX: utiliser remove() sur une liste, pas discard()
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+        if websocket in self.admin_connections:
+            self.admin_connections.remove(websocket)
 
     async def broadcast(self, message: dict):
+        dead = []
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
-            except:
-                pass
+            except Exception:
+                dead.append(connection)
+        for c in dead:
+            self.disconnect(c)
 
     async def broadcast_to_admins(self, message: dict):
+        dead = []
         for connection in self.admin_connections:
             try:
                 await connection.send_json(message)
-            except:
-                pass
+            except Exception:
+                dead.append(connection)
+        for c in dead:
+            self.disconnect(c)
 
 manager = ConnectionManager()
 
@@ -86,6 +95,8 @@ async def get_db():
 async def init_db():
     try:
         async with aiosqlite.connect(DATABASE_FILE) as db:
+            db.row_factory = aiosqlite.Row
+
             # Table utilisateurs
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS users (
@@ -259,12 +270,16 @@ def decode_token(token: str) -> dict:
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    db=Depends(get_db)
+    db: aiosqlite.Connection = Depends(get_db)
 ):
     if not credentials:
         raise HTTPException(status_code=401, detail="Authentification requise")
     payload = decode_token(credentials.credentials)
-    user = await db.fetchone("SELECT * FROM users WHERE id = ? AND is_active = TRUE", (payload["user_id"],))
+    # FIX: utiliser execute + fetchone, pas db.fetchone() (inexistant dans aiosqlite)
+    cursor = await db.execute(
+        "SELECT * FROM users WHERE id = ? AND is_active = 1", (payload["user_id"],)
+    )
+    user = await cursor.fetchone()
     if not user:
         raise HTTPException(status_code=401, detail="Utilisateur introuvable")
     return dict(user)
@@ -276,8 +291,10 @@ async def get_admin_user(user=Depends(get_current_user)):
 
 # ─── Routes Auth ──────────────────────────────────────────────────────────────
 @app.post("/api/auth/register", tags=["Auth"])
-async def register(data: UserRegister, db=Depends(get_db)):
-    existing = await db.fetchone("SELECT id FROM users WHERE phone = ?", (data.phone,))
+async def register(data: UserRegister, db: aiosqlite.Connection = Depends(get_db)):
+    # FIX: utiliser execute + fetchone
+    cursor = await db.execute("SELECT id FROM users WHERE phone = ?", (data.phone,))
+    existing = await cursor.fetchone()
     if existing:
         raise HTTPException(status_code=400, detail="Numéro déjà enregistré")
 
@@ -291,6 +308,7 @@ async def register(data: UserRegister, db=Depends(get_db)):
 
     token = create_token(user_id, data.phone, "client")
     return {
+        # FIX: clé cohérente access_token (le frontend lit data.access_token)
         "access_token": token,
         "token_type": "bearer",
         "user": {
@@ -302,8 +320,12 @@ async def register(data: UserRegister, db=Depends(get_db)):
     }
 
 @app.post("/api/auth/login", tags=["Auth"])
-async def login(data: UserLogin, db=Depends(get_db)):
-    user = await db.fetchone("SELECT * FROM users WHERE phone = ? AND is_active = TRUE", (data.phone,))
+async def login(data: UserLogin, db: aiosqlite.Connection = Depends(get_db)):
+    # FIX: utiliser execute + fetchone
+    cursor = await db.execute(
+        "SELECT * FROM users WHERE phone = ? AND is_active = 1", (data.phone,)
+    )
+    user = await cursor.fetchone()
     if not user:
         raise HTTPException(status_code=401, detail="Identifiants invalides")
 
@@ -313,6 +335,7 @@ async def login(data: UserLogin, db=Depends(get_db)):
 
     token = create_token(user_dict["id"], user_dict["phone"], user_dict["role"])
     return {
+        # FIX: clé cohérente access_token
         "access_token": token,
         "token_type": "bearer",
         "user": {
@@ -325,121 +348,235 @@ async def login(data: UserLogin, db=Depends(get_db)):
 
 # ─── Routes Produits ──────────────────────────────────────────────────────────
 @app.get("/api/products", tags=["Produits"])
-async def list_products(db=Depends(get_db)):
-    products = await db.fetchall("""
-        SELECT p.*, c.name as category_name FROM products p
-        LEFT JOIN categories c ON p.category_id = c.id
-        WHERE p.is_active = TRUE
-        ORDER BY p.created_at DESC
-    """)
+async def list_products(
+    category_id: Optional[int] = None,
+    search: Optional[str] = None,          # FIX: paramètre search ajouté
+    sort: str = "recent",
+    page: int = 1,
+    limit: int = 12,
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    offset = (page - 1) * limit
+
+    # Construction dynamique de la requête
+    where_clauses = ["p.is_active = 1"]
+    params = []
+
+    if category_id:
+        where_clauses.append("p.category_id = ?")
+        params.append(category_id)
+
+    # FIX: filtre de recherche par nom
+    if search:
+        where_clauses.append("p.name LIKE ?")
+        params.append(f"%{search}%")
+
+    where_sql = " AND ".join(where_clauses)
+
+    sort_map = {
+        "recent": "p.created_at DESC",
+        "popular": "p.views DESC",
+        "liked": "p.likes DESC",
+        "price_asc": "p.price ASC",
+        "price_desc": "p.price DESC",
+    }
+    order_sql = sort_map.get(sort, "p.created_at DESC")
+
+    # Total
+    cursor = await db.execute(
+        f"SELECT COUNT(*) FROM products p WHERE {where_sql}", params
+    )
+    total_row = await cursor.fetchone()
+    total = total_row[0] if total_row else 0
+
+    # Produits
+    cursor = await db.execute(
+        f"""SELECT p.*, c.name as category_name FROM products p
+            LEFT JOIN categories c ON p.category_id = c.id
+            WHERE {where_sql}
+            ORDER BY {order_sql}
+            LIMIT ? OFFSET ?""",
+        params + [limit, offset]
+    )
+    products = await cursor.fetchall()
+
     result = []
     for p in products:
         p_dict = dict(p)
-        images = await db.fetchall("SELECT image_path FROM product_images WHERE product_id = ? ORDER BY is_main DESC", (p_dict["id"],))
+        img_cursor = await db.execute(
+            "SELECT image_path, is_main FROM product_images WHERE product_id = ? ORDER BY is_main DESC",
+            (p_dict["id"],)
+        )
+        images = await img_cursor.fetchall()
         p_dict["images"] = [dict(img) for img in images]
-        if images:
-            p_dict["main_image"] = images[0]["image_path"] if images else None
+        p_dict["main_image"] = images[0]["image_path"] if images else None
         result.append(p_dict)
-    return result
+
+    return {
+        "products": result,
+        "total": total,
+        "page": page,
+        "pages": (total + limit - 1) // limit
+    }
 
 @app.get("/api/products/{product_id}", tags=["Produits"])
-async def get_product(product_id: str, db=Depends(get_db)):
-    product = await db.fetchone("""
+async def get_product(product_id: str, db: aiosqlite.Connection = Depends(get_db)):
+    cursor = await db.execute("""
         SELECT p.*, c.name as category_name FROM products p
         LEFT JOIN categories c ON p.category_id = c.id
-        WHERE p.id = ? AND p.is_active = TRUE
+        WHERE p.id = ? AND p.is_active = 1
     """, (product_id,))
-    
+    product = await cursor.fetchone()
+
     if not product:
         raise HTTPException(status_code=404, detail="Produit introuvable")
-    
+
     p_dict = dict(product)
     await db.execute("UPDATE products SET views = views + 1 WHERE id = ?", (product_id,))
     await db.commit()
-    
-    images = await db.fetchall("SELECT image_path FROM product_images WHERE product_id = ? ORDER BY is_main DESC", (product_id,))
+
+    img_cursor = await db.execute(
+        "SELECT image_path, is_main FROM product_images WHERE product_id = ? ORDER BY is_main DESC",
+        (product_id,)
+    )
+    images = await img_cursor.fetchall()
     p_dict["images"] = [dict(img) for img in images]
-    if images:
-        p_dict["main_image"] = images[0]["image_path"]
-    
+    p_dict["main_image"] = images[0]["image_path"] if images else None
+
     return p_dict
 
 @app.get("/api/categories", tags=["Catégories"])
-async def get_categories(db=Depends(get_db)):
-    categories = await db.fetchall("SELECT * FROM categories ORDER BY name")
+async def get_categories(db: aiosqlite.Connection = Depends(get_db)):
+    cursor = await db.execute("SELECT * FROM categories ORDER BY name")
+    categories = await cursor.fetchall()
     return [dict(c) for c in categories]
 
 # ─── Routes Commandes ──────────────────────────────────────────────────────────
 @app.post("/api/orders", tags=["Commandes"])
-async def create_order(order_data: OrderCreate, user=Depends(get_current_user), db=Depends(get_db)):
-    product = await db.fetchone("SELECT * FROM products WHERE id = ?", (order_data.product_id,))
+async def create_order(
+    order_data: OrderCreate,
+    user=Depends(get_current_user),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    cursor = await db.execute("SELECT * FROM products WHERE id = ?", (order_data.product_id,))
+    product = await cursor.fetchone()
     if not product:
         raise HTTPException(status_code=404, detail="Produit introuvable")
-    
+
     product_dict = dict(product)
     if product_dict["stock"] < order_data.quantity:
         raise HTTPException(status_code=400, detail="Stock insuffisant")
 
     order_id = str(uuid.uuid4())
     total_price = product_dict["price"] * order_data.quantity
-    
+
     await db.execute("""
         INSERT INTO orders (id, user_id, product_id, quantity, total_price, status, payment_method)
         VALUES (?, ?, ?, ?, ?, 'en attente', 'wave')
     """, (order_id, user["id"], order_data.product_id, order_data.quantity, total_price))
-    
-    await db.execute("UPDATE products SET stock = stock - ? WHERE id = ?", (order_data.quantity, order_data.product_id))
+
+    await db.execute(
+        "UPDATE products SET stock = stock - ? WHERE id = ?",
+        (order_data.quantity, order_data.product_id)
+    )
     await db.commit()
 
     return {
         "order_id": order_id,
         "status": "en attente",
         "total_price": total_price,
-        "wave_link": product_dict.get("wave_link", "https://app.wave.com")
+        "wave_link": product_dict.get("wave_link") or "https://app.wave.com"
     }
 
-@app.get("/api/orders", tags=["Commandes"])
-async def get_user_orders(user=Depends(get_current_user), db=Depends(get_db)):
-    orders = await db.fetchall("""
+# FIX: route renommée /api/orders/my pour correspondre au frontend
+@app.get("/api/orders/my", tags=["Commandes"])
+async def get_user_orders(
+    user=Depends(get_current_user),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    cursor = await db.execute("""
         SELECT o.*, p.name as product_name, p.price FROM orders o
         LEFT JOIN products p ON o.product_id = p.id
         WHERE o.user_id = ?
         ORDER BY o.created_at DESC
     """, (user["id"],))
+    orders = await cursor.fetchall()
+    return [dict(o) for o in orders]
+
+# Garder aussi /api/orders en GET pour la compatibilité admin
+@app.get("/api/orders", tags=["Commandes"])
+async def get_all_orders(
+    user=Depends(get_admin_user),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    cursor = await db.execute("""
+        SELECT o.*, p.name as product_name, u.full_name as client_name FROM orders o
+        LEFT JOIN products p ON o.product_id = p.id
+        LEFT JOIN users u ON o.user_id = u.id
+        ORDER BY o.created_at DESC
+    """)
+    orders = await cursor.fetchall()
     return [dict(o) for o in orders]
 
 # ─── Routes Likes ──────────────────────────────────────────────────────────────
 @app.post("/api/products/{product_id}/like", tags=["Likes"])
-async def like_product(product_id: str, user=Depends(get_current_user), db=Depends(get_db)):
-    existing = await db.fetchone(
+async def like_product(
+    product_id: str,
+    user=Depends(get_current_user),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    cursor = await db.execute(
         "SELECT id FROM product_likes WHERE user_id = ? AND product_id = ?",
         (user["id"], product_id)
     )
-    
+    existing = await cursor.fetchone()
+
     if existing:
-        await db.execute("DELETE FROM product_likes WHERE user_id = ? AND product_id = ?", (user["id"], product_id))
+        await db.execute(
+            "DELETE FROM product_likes WHERE user_id = ? AND product_id = ?",
+            (user["id"], product_id)
+        )
         await db.execute("UPDATE products SET likes = likes - 1 WHERE id = ?", (product_id,))
         liked = False
     else:
-        like_id = str(uuid.uuid4())
-        await db.execute("""
-            INSERT INTO product_likes (user_id, product_id)
-            VALUES (?, ?)
-        """, (user["id"], product_id))
+        await db.execute(
+            "INSERT INTO product_likes (user_id, product_id) VALUES (?, ?)",
+            (user["id"], product_id)
+        )
         await db.execute("UPDATE products SET likes = likes + 1 WHERE id = ?", (product_id,))
         liked = True
-    
-    await db.commit()
-    return {"liked": liked}
 
-# ─── Route Santé ──────────────────────────────────────────────────────────────
+    await db.commit()
+
+    # Récupérer le nouveau total de likes
+    cursor = await db.execute("SELECT likes FROM products WHERE id = ?", (product_id,))
+    row = await cursor.fetchone()
+    likes_count = row["likes"] if row else 0
+
+    return {"liked": liked, "likes": likes_count}
+
+# ─── WebSocket ────────────────────────────────────────────────────────────────
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
+# ─── Route Santé & Accueil ────────────────────────────────────────────────────
 @app.get("/")
 async def accueil():
-    return FileResponse("index.html")
+    if os.path.exists("index.html"):
+        return FileResponse("index.html")
+    return {"message": "Digital Fashion Store API", "status": "online"}
 
 @app.get("/api/health", tags=["System"])
 async def health_check():
     return {"status": "🟢 API en ligne", "version": "1.0.0"}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=3000, log_level="info")
+
