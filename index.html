@@ -657,7 +657,7 @@ footer {
   <div class="products-grid" id="productsGrid">
     <div class="loader"><div class="loader-dot"></div><div class="loader-dot"></div><div class="loader-dot"></div></div>
   </div>
-  <div style="text-align:center;margin-top:40px" id="loadMoreWrap" style="display:none">
+  <div style="text-align:center;margin-top:40px;display:none" id="loadMoreWrap">
     <button class="btn-ghost" id="loadMoreBtn" onclick="loadMore()">Charger plus</button>
   </div>
 </section>
@@ -793,7 +793,13 @@ footer {
 <!-- ════════════ JAVASCRIPT ════════════ -->
 <script>
 // ─── Config ──────────────────────────────────────────────────
-const API = 'https://web-production-94add.up.railway.app/api';
+// FIX: URL de l'API Railway — à mettre à jour si tu changes de domaine
+const API_BASE = window.location.origin;
+const API = `${API_BASE}/api`;
+
+// FIX: URL WebSocket déduite automatiquement du domaine (ws:// ou wss://)
+const WS_URL = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`;
+
 let token = localStorage.getItem('dfs_token');
 let currentUser = JSON.parse(localStorage.getItem('dfs_user') || 'null');
 let currentProduct = null;
@@ -809,7 +815,6 @@ document.addEventListener('DOMContentLoaded', () => {
   loadProducts();
   connectWS();
   initSearch();
-  updateStatHero();
 });
 
 function initAuth() {
@@ -842,6 +847,7 @@ function logout() {
 async function loadCategories() {
   try {
     const res = await fetch(`${API}/categories`);
+    if (!res.ok) throw new Error('Erreur réseau');
     const cats = await res.json();
     const grid = document.getElementById('catsGrid');
     cats.forEach(cat => {
@@ -852,7 +858,10 @@ async function loadCategories() {
       grid.appendChild(chip);
     });
     document.getElementById('statCategories').textContent = cats.length;
-  } catch (e) { console.log('Serveur non disponible, mode démo'); loadDemoCategories(); }
+  } catch (e) {
+    console.warn('Catégories non chargées depuis le serveur, mode démo');
+    loadDemoCategories();
+  }
 }
 
 function loadDemoCategories() {
@@ -881,22 +890,28 @@ function filterCategory(catId, el) {
 
 // ─── Produits ─────────────────────────────────────────────────
 async function loadProducts(reset = false) {
-  if (reset) { currentPage = 1; document.getElementById('productsGrid').innerHTML = '<div class="loader"><div class="loader-dot"></div><div class="loader-dot"></div><div class="loader-dot"></div></div>'; }
+  if (reset) {
+    currentPage = 1;
+    document.getElementById('productsGrid').innerHTML = '<div class="loader"><div class="loader-dot"></div><div class="loader-dot"></div><div class="loader-dot"></div></div>';
+  }
 
   const params = new URLSearchParams({
-    page: currentPage, limit: 12, sort: currentSort,
+    page: currentPage,
+    limit: 12,
+    sort: currentSort,
     ...(currentCategory && { category_id: currentCategory })
   });
 
   try {
     const res = await fetch(`${API}/products?${params}`);
+    if (!res.ok) throw new Error('Erreur réseau');
     const data = await res.json();
     renderProducts(data.products, reset);
-    const lm = document.getElementById('loadMoreWrap');
-    lm.style.display = currentPage < data.pages ? 'block' : 'none';
+    document.getElementById('loadMoreWrap').style.display = currentPage < data.pages ? 'block' : 'none';
     document.getElementById('statProducts').textContent = data.total + '+';
     document.getElementById('statClients').textContent = '500+';
   } catch (e) {
+    console.warn('Mode démo activé', e);
     loadDemoProducts(reset);
   }
 }
@@ -934,7 +949,7 @@ function renderProducts(products, reset = false) {
   const grid = document.getElementById('productsGrid');
   if (reset) grid.innerHTML = '';
 
-  if (!products.length && reset) {
+  if (!products || (!products.length && reset)) {
     grid.innerHTML = `<div class="empty-state"><div class="empty-icon">🛍️</div><h3>Aucun produit trouvé</h3><p>Essayez une autre catégorie</p></div>`;
     return;
   }
@@ -946,7 +961,7 @@ function renderProducts(products, reset = false) {
     card.style.animation = 'fadeUp 0.5s ease both';
 
     const imgContent = p.main_image
-      ? `<img src="${API.replace('/api','')}/${p.main_image}" alt="${p.name}" loading="lazy">`
+      ? `<img src="${API_BASE}/${p.main_image}" alt="${p.name}" loading="lazy">`
       : `<div class="product-placeholder">${p.emoji || '🛍️'}</div>`;
 
     const isLiked = currentUser ? (p.user_liked || false) : false;
@@ -979,7 +994,6 @@ function renderProducts(products, reset = false) {
     card.querySelector('.product-img-wrap').addEventListener('click', (e) => {
       if (!e.target.closest('button')) openProductModal(e, p.id);
     });
-    // Stocker les données du produit
     card.dataset.product = JSON.stringify(p);
     grid.appendChild(card);
   });
@@ -998,18 +1012,21 @@ function applySort() {
 // ─── Modal Produit ────────────────────────────────────────────
 async function openProductModal(e, productId) {
   if (e) e.stopPropagation();
-  // Chercher dans les cartes existantes d'abord
-  const card = document.querySelector(`.product-card[data-product]`);
-  let product = null;
 
+  let product = null;
   document.querySelectorAll('.product-card').forEach(c => {
-    const d = JSON.parse(c.dataset.product || '{}');
-    if (d.id == productId) product = d;
+    try {
+      const d = JSON.parse(c.dataset.product || '{}');
+      if (d.id == productId) product = d;
+    } catch {}
   });
 
   if (!product) {
     try {
-      const res = await fetch(`${API}/products/${productId}`, { headers: token ? {Authorization:`Bearer ${token}`} : {} });
+      const res = await fetch(`${API}/products/${productId}`, {
+        headers: token ? {Authorization:`Bearer ${token}`} : {}
+      });
+      if (!res.ok) throw new Error();
       product = await res.json();
     } catch (e) {
       toast('Impossible de charger le produit', 'error');
@@ -1035,14 +1052,18 @@ async function openProductModal(e, productId) {
   }
 
   const imgContainer = document.getElementById('modalImages');
-  const placeholder = document.getElementById('modalPlaceholder');
-  if (product.main_image || (product.images && product.images.length)) {
-    placeholder.style.display = 'none';
-    imgContainer.innerHTML = `<button class="modal-close" onclick="closeModal('productModal')">✕</button>
-      <img src="${API.replace('/api','')}/${product.main_image || product.images[0].image_path}" alt="${product.name}" style="width:100%;height:100%;object-fit:cover">`;
+  const mainImg = product.main_image || (product.images && product.images.length ? product.images[0].image_path : null);
+
+  if (mainImg) {
+    imgContainer.innerHTML = `
+      <button class="modal-close" onclick="closeModal('productModal')">✕</button>
+      <img src="${API_BASE}/${mainImg}" alt="${product.name}" style="width:100%;height:100%;object-fit:cover">
+    `;
   } else {
-    placeholder.style.display = 'flex';
-    placeholder.textContent = product.emoji || '🛍️';
+    imgContainer.innerHTML = `
+      <button class="modal-close" onclick="closeModal('productModal')">✕</button>
+      <div class="product-placeholder" style="height:100%">${product.emoji || '🛍️'}</div>
+    `;
   }
 
   document.getElementById('productModal').classList.add('open');
@@ -1050,9 +1071,22 @@ async function openProductModal(e, productId) {
 
 function openProductAndPay(e, productId) {
   e.stopPropagation();
-  openProductModal(null, productId).then(() => {});
-  currentProduct = {id: productId};
-  payProduct();
+  // FIX: chercher la donnée du produit dans les cartes existantes
+  let product = null;
+  document.querySelectorAll('.product-card').forEach(c => {
+    try {
+      const d = JSON.parse(c.dataset.product || '{}');
+      if (d.id == productId) product = d;
+    } catch {}
+  });
+  currentProduct = product || {id: productId};
+
+  if (!currentUser) {
+    openAuth();
+    toast('Connectez-vous pour payer', 'info');
+    return;
+  }
+  handlePayment(productId);
 }
 
 function payProduct() {
@@ -1068,11 +1102,20 @@ function payProduct() {
 }
 
 async function handlePayment(productId) {
+  // Ne pas tenter de payer les produits démo
+  if (String(productId).startsWith('demo-')) {
+    toast('Mode démo : commande simulée !', 'success');
+    closeModal('productModal');
+    return;
+  }
+
   try {
-    // Créer la commande
     const res = await fetch(`${API}/orders`, {
       method: 'POST',
-      headers: {'Content-Type':'application/json', 'Authorization':`Bearer ${token}`},
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
       body: JSON.stringify({product_id: productId, quantity: 1})
     });
     const data = await res.json();
@@ -1081,25 +1124,25 @@ async function handlePayment(productId) {
       toast('Commande créée ! Redirection vers Wave...', 'success');
       if (data.wave_link) {
         setTimeout(() => window.open(data.wave_link, '_blank'), 1000);
-      } else {
-        toast('Lien de paiement Wave non disponible', 'error');
       }
     } else {
       toast(data.detail || 'Erreur lors de la commande', 'error');
     }
   } catch (e) {
-    // Mode demo
-    toast('Commande simulée ! En production, redirection vers Wave.', 'success');
-    closeModal('productModal');
+    toast('Erreur réseau, veuillez réessayer', 'error');
   }
 }
 
 async function likeProduct() {
   if (!currentUser) { openAuth(); return; }
-  if (!currentProduct) return;
+  if (!currentProduct || String(currentProduct.id).startsWith('demo-')) {
+    toast('Mode démo : like simulé', 'info');
+    return;
+  }
   try {
     const res = await fetch(`${API}/products/${currentProduct.id}/like`, {
-      method: 'POST', headers: {'Authorization':`Bearer ${token}`}
+      method: 'POST',
+      headers: {'Authorization': `Bearer ${token}`}
     });
     const data = await res.json();
     const btn = document.getElementById('modalLikeBtn');
@@ -1108,16 +1151,22 @@ async function likeProduct() {
     document.getElementById('modalLikes').textContent = data.likes;
     toast(data.liked ? 'Ajouté aux favoris !' : 'Retiré des favoris', 'info');
   } catch (e) {
-    toast('Mode démo : like simulé', 'info');
+    toast('Erreur réseau', 'error');
   }
 }
 
 async function quickLike(e, productId, btn) {
   e.stopPropagation();
   if (!currentUser) { openAuth(); return; }
+  if (String(productId).startsWith('demo-')) {
+    btn.textContent = btn.classList.contains('liked') ? '🤍' : '❤️';
+    btn.classList.toggle('liked');
+    return;
+  }
   try {
     const res = await fetch(`${API}/products/${productId}/like`, {
-      method: 'POST', headers: {'Authorization':`Bearer ${token}`}
+      method: 'POST',
+      headers: {'Authorization': `Bearer ${token}`}
     });
     const data = await res.json();
     btn.textContent = data.liked ? '❤️' : '🤍';
@@ -1148,20 +1197,27 @@ function switchTab(tab) {
 }
 
 async function doLogin() {
-  const phone = document.getElementById('loginPhone').value;
+  const phone = document.getElementById('loginPhone').value.trim();
   const password = document.getElementById('loginPassword').value;
   const errEl = document.getElementById('loginErr');
   errEl.classList.remove('show');
 
+  if (!phone || !password) {
+    errEl.textContent = 'Veuillez remplir tous les champs';
+    errEl.classList.add('show');
+    return;
+  }
+
   try {
     const res = await fetch(`${API}/auth/login`, {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({phone, password})
     });
     const data = await res.json();
     if (res.ok) {
-      token = data.token;
+      // FIX: lire data.access_token (cohérent avec le backend)
+      token = data.access_token;
       currentUser = data.user;
       localStorage.setItem('dfs_token', token);
       localStorage.setItem('dfs_user', JSON.stringify(currentUser));
@@ -1169,35 +1225,38 @@ async function doLogin() {
       showUserMenu();
       toast(`Bienvenue ${currentUser.full_name || currentUser.phone} ! 👋`, 'success');
     } else {
-      errEl.textContent = data.detail; errEl.classList.add('show');
+      errEl.textContent = data.detail || 'Identifiants invalides';
+      errEl.classList.add('show');
     }
   } catch (e) {
-    // Mode demo
-    currentUser = {id:'demo', phone, full_name: phone, role:'client'};
-    token = 'demo_token';
-    localStorage.setItem('dfs_user', JSON.stringify(currentUser));
-    closeModal('authModal');
-    showUserMenu();
-    toast('Mode démo : connexion simulée', 'info');
+    errEl.textContent = 'Impossible de contacter le serveur';
+    errEl.classList.add('show');
   }
 }
 
 async function doRegister() {
-  const phone = document.getElementById('regPhone').value;
+  const phone = document.getElementById('regPhone').value.trim();
   const password = document.getElementById('regPassword').value;
-  const full_name = document.getElementById('regName').value;
+  const full_name = document.getElementById('regName').value.trim();
   const errEl = document.getElementById('registerErr');
   errEl.classList.remove('show');
+
+  if (!phone || !password || !full_name) {
+    errEl.textContent = 'Veuillez remplir tous les champs';
+    errEl.classList.add('show');
+    return;
+  }
 
   try {
     const res = await fetch(`${API}/auth/register`, {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({phone, password, full_name})
     });
     const data = await res.json();
     if (res.ok) {
-      token = data.token;
+      // FIX: lire data.access_token
+      token = data.access_token;
       currentUser = data.user;
       localStorage.setItem('dfs_token', token);
       localStorage.setItem('dfs_user', JSON.stringify(currentUser));
@@ -1205,15 +1264,12 @@ async function doRegister() {
       showUserMenu();
       toast('Compte créé avec succès ! 🎉', 'success');
     } else {
-      errEl.textContent = data.detail; errEl.classList.add('show');
+      errEl.textContent = data.detail || 'Erreur lors de l\'inscription';
+      errEl.classList.add('show');
     }
   } catch (e) {
-    currentUser = {id:'demo', phone, full_name, role:'client'};
-    token = 'demo_token';
-    localStorage.setItem('dfs_user', JSON.stringify(currentUser));
-    closeModal('authModal');
-    showUserMenu();
-    toast('Mode démo : inscription simulée', 'info');
+    errEl.textContent = 'Impossible de contacter le serveur';
+    errEl.classList.add('show');
   }
 }
 
@@ -1221,8 +1277,15 @@ async function doRegister() {
 async function openOrders() {
   document.getElementById('ordersPanel').classList.add('open');
   if (!currentUser) return;
+
+  document.getElementById('ordersList').innerHTML = '<div class="loader"><div class="loader-dot"></div><div class="loader-dot"></div><div class="loader-dot"></div></div>';
+
   try {
-    const res = await fetch(`${API}/orders/my`, { headers: {Authorization:`Bearer ${token}`} });
+    // FIX: route correcte /api/orders/my
+    const res = await fetch(`${API}/orders/my`, {
+      headers: {Authorization: `Bearer ${token}`}
+    });
+    if (!res.ok) throw new Error();
     const orders = await res.json();
     const list = document.getElementById('ordersList');
     if (!orders.length) {
@@ -1233,15 +1296,15 @@ async function openOrders() {
       <div class="order-item">
         <div style="width:52px;height:52px;border-radius:8px;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:1.5rem">🛍️</div>
         <div class="order-info">
-          <strong>${o.product_name}</strong><br>
+          <strong>${o.product_name || 'Produit'}</strong><br>
           <span class="order-price">${formatPrice(o.total_price)} FCFA</span><br>
           <span class="order-date">${new Date(o.created_at).toLocaleDateString('fr-FR')}</span>
         </div>
-        <span class="order-status status-${o.status}">${o.status}</span>
+        <span class="order-status status-${o.status === 'payé' ? 'paid' : 'pending'}">${o.status}</span>
       </div>
     `).join('');
   } catch (e) {
-    document.getElementById('ordersList').innerHTML = '<div style="color:var(--text2);text-align:center;padding:40px">Mode démo</div>';
+    document.getElementById('ordersList').innerHTML = '<div style="color:var(--text2);text-align:center;padding:40px">Erreur de chargement</div>';
   }
 }
 
@@ -1263,11 +1326,15 @@ function initSearch() {
 }
 
 async function doSearch(q) {
-  if (!q.trim()) { document.getElementById('searchResults').classList.remove('show'); return; }
+  if (!q.trim()) {
+    document.getElementById('searchResults').classList.remove('show');
+    return;
+  }
   try {
     const res = await fetch(`${API}/products?search=${encodeURIComponent(q)}&limit=5`);
+    if (!res.ok) throw new Error();
     const data = await res.json();
-    renderSearchResults(data.products, q);
+    renderSearchResults(data.products || [], q);
   } catch (e) {
     renderSearchResults([], q);
   }
@@ -1282,7 +1349,9 @@ function renderSearchResults(products, q) {
   }
   container.innerHTML = products.map(p => `
     <div class="search-result-item" onclick="openProductModal(null,'${p.id}')">
-      <div style="width:40px;height:40px;border-radius:8px;background:var(--bg3);display:flex;align-items:center;justify-content:center">${p.emoji || '🛍️'}</div>
+      <div style="width:40px;height:40px;border-radius:8px;background:var(--bg3);display:flex;align-items:center;justify-content:center">
+        ${p.main_image ? `<img src="${API_BASE}/${p.main_image}" style="width:100%;height:100%;border-radius:8px;object-fit:cover">` : (p.emoji || '🛍️')}
+      </div>
       <div class="search-result-info">
         <strong>${p.name}</strong><br>
         <span>${formatPrice(p.price)} FCFA</span>
@@ -1294,24 +1363,38 @@ function renderSearchResults(products, q) {
 
 // ─── WebSocket ────────────────────────────────────────────────
 function connectWS() {
+  // FIX: WebSocket sur le même domaine que le site (Railway), pas localhost
   try {
-    ws = new WebSocket('ws://localhost:8000/ws');
+    ws = new WebSocket(WS_URL);
+    ws.onopen = () => console.log('WebSocket connecté');
     ws.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
-      handleWSMessage(msg);
+      try {
+        const msg = JSON.parse(e.data);
+        handleWSMessage(msg);
+      } catch {}
     };
-  } catch (err) {}
+    ws.onclose = () => {
+      // Reconnexion automatique après 5s
+      setTimeout(connectWS, 5000);
+    };
+    ws.onerror = () => {
+      // Silencieux, pas bloquant
+    };
+  } catch (err) {
+    console.warn('WebSocket non disponible');
+  }
 }
 
 function handleWSMessage(msg) {
   if (msg.event === 'product_liked') {
-    // Mettre à jour les likes en temps réel
     document.querySelectorAll('.product-card').forEach(card => {
-      const d = JSON.parse(card.dataset.product || '{}');
-      if (d.id === msg.data.product_id) {
-        const meta = card.querySelector('.product-meta');
-        if (meta) meta.querySelector('span:last-child').textContent = `❤️ ${msg.data.likes}`;
-      }
+      try {
+        const d = JSON.parse(card.dataset.product || '{}');
+        if (d.id === msg.data.product_id) {
+          const spans = card.querySelectorAll('.product-meta span');
+          if (spans[1]) spans[1].textContent = `❤️ ${msg.data.likes}`;
+        }
+      } catch {}
     });
   }
 }
@@ -1319,13 +1402,13 @@ function handleWSMessage(msg) {
 // ─── Utils ────────────────────────────────────────────────────
 function formatPrice(n) { return new Intl.NumberFormat('fr-FR').format(n); }
 function scrollToProducts() { document.getElementById('productsSection').scrollIntoView({behavior:'smooth'}); }
-function updateStatHero() {}
+function showSection() {}
 
 function toggleTheme() {
   const html = document.documentElement;
   const isDark = html.getAttribute('data-theme') === 'dark';
   html.setAttribute('data-theme', isDark ? 'light' : 'dark');
-  document.querySelector('[onclick="toggleTheme()"]').textContent = isDark ? '🌙' : '☀️';
+  document.querySelector('[onclick="toggleTheme()"]').textContent = isDark ? '☀️' : '🌙';
 }
 
 function toast(msg, type = 'info') {
@@ -1340,3 +1423,4 @@ function toast(msg, type = 'info') {
 </script>
 </body>
 </html>
+
