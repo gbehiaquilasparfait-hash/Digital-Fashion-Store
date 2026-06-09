@@ -32,7 +32,7 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS - Autoriser toutes les origines (dev)
+# CORS - Autoriser toutes les origines
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -51,32 +51,18 @@ security = HTTPBearer(auto_error=False)
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
-        self.admin_connections: List[WebSocket] = []
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
 
     def disconnect(self, websocket: WebSocket):
-        # FIX: utiliser remove() sur une liste, pas discard()
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
-        if websocket in self.admin_connections:
-            self.admin_connections.remove(websocket)
 
     async def broadcast(self, message: dict):
         dead = []
         for connection in self.active_connections:
-            try:
-                await connection.send_json(message)
-            except Exception:
-                dead.append(connection)
-        for c in dead:
-            self.disconnect(c)
-
-    async def broadcast_to_admins(self, message: dict):
-        dead = []
-        for connection in self.admin_connections:
             try:
                 await connection.send_json(message)
             except Exception:
@@ -97,7 +83,6 @@ async def init_db():
         async with aiosqlite.connect(DATABASE_FILE) as db:
             db.row_factory = aiosqlite.Row
 
-            # Table utilisateurs
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     id TEXT PRIMARY KEY,
@@ -111,7 +96,6 @@ async def init_db():
                 )
             """)
 
-            # Table catégories
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS categories (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,7 +106,6 @@ async def init_db():
                 )
             """)
 
-            # Table produits
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS products (
                     id TEXT PRIMARY KEY,
@@ -140,7 +123,6 @@ async def init_db():
                 )
             """)
 
-            # Table images produits
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS product_images (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -151,7 +133,6 @@ async def init_db():
                 )
             """)
 
-            # Table likes
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS product_likes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -162,7 +143,6 @@ async def init_db():
                 )
             """)
 
-            # Table commandes
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS orders (
                     id TEXT PRIMARY KEY,
@@ -177,7 +157,6 @@ async def init_db():
                 )
             """)
 
-            # Table notifications
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS notifications (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -190,7 +169,6 @@ async def init_db():
                 )
             """)
 
-            # Insérer des catégories par défaut
             await db.execute("""
                 INSERT OR IGNORE INTO categories (name, description, icon) VALUES
                 ('Robes', 'Robes élégantes et tendance', '👗'),
@@ -201,7 +179,6 @@ async def init_db():
                 ('Sport & Casual', 'Tenues décontractées et sportswear', '👟')
             """)
 
-            # Créer un compte admin par défaut
             admin_id = str(uuid.uuid4())
             admin_pass = bcrypt.hashpw("Admin@1234".encode(), bcrypt.gensalt()).decode()
             await db.execute("""
@@ -275,7 +252,6 @@ async def get_current_user(
     if not credentials:
         raise HTTPException(status_code=401, detail="Authentification requise")
     payload = decode_token(credentials.credentials)
-    # FIX: utiliser execute + fetchone, pas db.fetchone() (inexistant dans aiosqlite)
     cursor = await db.execute(
         "SELECT * FROM users WHERE id = ? AND is_active = 1", (payload["user_id"],)
     )
@@ -292,7 +268,6 @@ async def get_admin_user(user=Depends(get_current_user)):
 # ─── Routes Auth ──────────────────────────────────────────────────────────────
 @app.post("/api/auth/register", tags=["Auth"])
 async def register(data: UserRegister, db: aiosqlite.Connection = Depends(get_db)):
-    # FIX: utiliser execute + fetchone
     cursor = await db.execute("SELECT id FROM users WHERE phone = ?", (data.phone,))
     existing = await cursor.fetchone()
     if existing:
@@ -308,7 +283,6 @@ async def register(data: UserRegister, db: aiosqlite.Connection = Depends(get_db
 
     token = create_token(user_id, data.phone, "client")
     return {
-        # FIX: clé cohérente access_token (le frontend lit data.access_token)
         "access_token": token,
         "token_type": "bearer",
         "user": {
@@ -321,7 +295,6 @@ async def register(data: UserRegister, db: aiosqlite.Connection = Depends(get_db
 
 @app.post("/api/auth/login", tags=["Auth"])
 async def login(data: UserLogin, db: aiosqlite.Connection = Depends(get_db)):
-    # FIX: utiliser execute + fetchone
     cursor = await db.execute(
         "SELECT * FROM users WHERE phone = ? AND is_active = 1", (data.phone,)
     )
@@ -335,7 +308,6 @@ async def login(data: UserLogin, db: aiosqlite.Connection = Depends(get_db)):
 
     token = create_token(user_dict["id"], user_dict["phone"], user_dict["role"])
     return {
-        # FIX: clé cohérente access_token
         "access_token": token,
         "token_type": "bearer",
         "user": {
@@ -346,19 +318,24 @@ async def login(data: UserLogin, db: aiosqlite.Connection = Depends(get_db)):
         }
     }
 
+# ─── Routes Catégories ────────────────────────────────────────────────────────
+@app.get("/api/categories", tags=["Catégories"])
+async def get_categories(db: aiosqlite.Connection = Depends(get_db)):
+    cursor = await db.execute("SELECT * FROM categories ORDER BY name")
+    categories = await cursor.fetchall()
+    return [dict(c) for c in categories]
+
 # ─── Routes Produits ──────────────────────────────────────────────────────────
 @app.get("/api/products", tags=["Produits"])
 async def list_products(
     category_id: Optional[int] = None,
-    search: Optional[str] = None,          # FIX: paramètre search ajouté
+    search: Optional[str] = None,
     sort: str = "recent",
     page: int = 1,
     limit: int = 12,
     db: aiosqlite.Connection = Depends(get_db)
 ):
     offset = (page - 1) * limit
-
-    # Construction dynamique de la requête
     where_clauses = ["p.is_active = 1"]
     params = []
 
@@ -366,13 +343,11 @@ async def list_products(
         where_clauses.append("p.category_id = ?")
         params.append(category_id)
 
-    # FIX: filtre de recherche par nom
     if search:
         where_clauses.append("p.name LIKE ?")
         params.append(f"%{search}%")
 
     where_sql = " AND ".join(where_clauses)
-
     sort_map = {
         "recent": "p.created_at DESC",
         "popular": "p.views DESC",
@@ -382,14 +357,12 @@ async def list_products(
     }
     order_sql = sort_map.get(sort, "p.created_at DESC")
 
-    # Total
     cursor = await db.execute(
         f"SELECT COUNT(*) FROM products p WHERE {where_sql}", params
     )
     total_row = await cursor.fetchone()
     total = total_row[0] if total_row else 0
 
-    # Produits
     cursor = await db.execute(
         f"""SELECT p.*, c.name as category_name FROM products p
             LEFT JOIN categories c ON p.category_id = c.id
@@ -445,11 +418,122 @@ async def get_product(product_id: str, db: aiosqlite.Connection = Depends(get_db
 
     return p_dict
 
-@app.get("/api/categories", tags=["Catégories"])
-async def get_categories(db: aiosqlite.Connection = Depends(get_db)):
-    cursor = await db.execute("SELECT * FROM categories ORDER BY name")
-    categories = await cursor.fetchall()
-    return [dict(c) for c in categories]
+@app.post("/api/products", tags=["Produits"])
+async def create_product(
+    product: ProductCreate,
+    user=Depends(get_admin_user),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    product_id = str(uuid.uuid4())
+    await db.execute("""
+        INSERT INTO products (id, name, description, price, stock, category_id, wave_link)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (product_id, product.name, product.description, product.price,
+          product.stock, product.category_id, product.wave_link))
+    await db.commit()
+
+    cursor = await db.execute("""
+        SELECT p.*, c.name as category_name FROM products p
+        LEFT JOIN categories c ON p.category_id = c.id
+        WHERE p.id = ?
+    """, (product_id,))
+    new_product = await cursor.fetchone()
+
+    # Notifier tous les clients connectés via WebSocket
+    await manager.broadcast({
+        "event": "product_added",
+        "data": dict(new_product)
+    })
+
+    return dict(new_product)
+
+@app.put("/api/products/{product_id}", tags=["Produits"])
+async def update_product(
+    product_id: str,
+    product: ProductUpdate,
+    user=Depends(get_admin_user),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    cursor = await db.execute("SELECT id FROM products WHERE id = ?", (product_id,))
+    existing = await cursor.fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Produit introuvable")
+
+    updates = {}
+    if product.name is not None: updates["name"] = product.name
+    if product.description is not None: updates["description"] = product.description
+    if product.price is not None: updates["price"] = product.price
+    if product.stock is not None: updates["stock"] = product.stock
+    if product.category_id is not None: updates["category_id"] = product.category_id
+    if product.wave_link is not None: updates["wave_link"] = product.wave_link
+    if product.is_active is not None: updates["is_active"] = product.is_active
+
+    if updates:
+        updates["updated_at"] = datetime.utcnow().isoformat()
+        set_clause = ", ".join([f"{k} = ?" for k in updates.keys()])
+        await db.execute(
+            f"UPDATE products SET {set_clause} WHERE id = ?",
+            list(updates.values()) + [product_id]
+        )
+        await db.commit()
+
+    cursor = await db.execute("""
+        SELECT p.*, c.name as category_name FROM products p
+        LEFT JOIN categories c ON p.category_id = c.id
+        WHERE p.id = ?
+    """, (product_id,))
+    updated = await cursor.fetchone()
+    return dict(updated)
+
+@app.delete("/api/products/{product_id}", tags=["Produits"])
+async def delete_product(
+    product_id: str,
+    user=Depends(get_admin_user),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    cursor = await db.execute("SELECT id FROM products WHERE id = ?", (product_id,))
+    existing = await cursor.fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Produit introuvable")
+
+    # Suppression douce (is_active = 0)
+    await db.execute("UPDATE products SET is_active = 0 WHERE id = ?", (product_id,))
+    await db.commit()
+    return {"message": "Produit supprimé avec succès"}
+
+@app.post("/api/products/{product_id}/images", tags=["Produits"])
+async def upload_product_images(
+    product_id: str,
+    files: List[UploadFile] = File(...),
+    user=Depends(get_admin_user),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    cursor = await db.execute("SELECT id FROM products WHERE id = ?", (product_id,))
+    existing = await cursor.fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Produit introuvable")
+
+    uploaded = []
+    for i, file in enumerate(files):
+        if not file.content_type.startswith("image/"):
+            continue
+        ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
+        filename = f"{product_id}_{uuid.uuid4().hex[:8]}.{ext}"
+        filepath = f"uploads/products/{filename}"
+
+        with open(filepath, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+        is_main = 1 if i == 0 else 0
+        await db.execute(
+            "INSERT INTO product_images (product_id, image_path, is_main) VALUES (?, ?, ?)",
+            (product_id, filepath, is_main)
+        )
+        uploaded.append(filepath)
+
+    await db.commit()
+    return {"uploaded": uploaded, "count": len(uploaded)}
 
 # ─── Routes Commandes ──────────────────────────────────────────────────────────
 @app.post("/api/orders", tags=["Commandes"])
@@ -458,7 +542,7 @@ async def create_order(
     user=Depends(get_current_user),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    cursor = await db.execute("SELECT * FROM products WHERE id = ?", (order_data.product_id,))
+    cursor = await db.execute("SELECT * FROM products WHERE id = ? AND is_active = 1", (order_data.product_id,))
     product = await cursor.fetchone()
     if not product:
         raise HTTPException(status_code=404, detail="Produit introuvable")
@@ -488,14 +572,13 @@ async def create_order(
         "wave_link": product_dict.get("wave_link") or "https://app.wave.com"
     }
 
-# FIX: route renommée /api/orders/my pour correspondre au frontend
 @app.get("/api/orders/my", tags=["Commandes"])
 async def get_user_orders(
     user=Depends(get_current_user),
     db: aiosqlite.Connection = Depends(get_db)
 ):
     cursor = await db.execute("""
-        SELECT o.*, p.name as product_name, p.price FROM orders o
+        SELECT o.*, p.name as product_name FROM orders o
         LEFT JOIN products p ON o.product_id = p.id
         WHERE o.user_id = ?
         ORDER BY o.created_at DESC
@@ -503,20 +586,43 @@ async def get_user_orders(
     orders = await cursor.fetchall()
     return [dict(o) for o in orders]
 
-# Garder aussi /api/orders en GET pour la compatibilité admin
-@app.get("/api/orders", tags=["Commandes"])
-async def get_all_orders(
+@app.get("/api/admin/orders", tags=["Admin"])
+async def get_admin_orders(
     user=Depends(get_admin_user),
     db: aiosqlite.Connection = Depends(get_db)
 ):
     cursor = await db.execute("""
-        SELECT o.*, p.name as product_name, u.full_name as client_name FROM orders o
+        SELECT o.*, p.name as product_name, u.phone as user_phone, u.full_name as client_name
+        FROM orders o
         LEFT JOIN products p ON o.product_id = p.id
         LEFT JOIN users u ON o.user_id = u.id
         ORDER BY o.created_at DESC
     """)
     orders = await cursor.fetchall()
     return [dict(o) for o in orders]
+
+@app.get("/api/admin/stats", tags=["Admin"])
+async def get_admin_stats(
+    user=Depends(get_admin_user),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    prod_cursor = await db.execute("SELECT COUNT(*) FROM products WHERE is_active = 1")
+    prod_count = (await prod_cursor.fetchone())[0]
+
+    order_cursor = await db.execute("SELECT COUNT(*), SUM(total_price) FROM orders")
+    order_row = await order_cursor.fetchone()
+    order_count = order_row[0] or 0
+    revenue = order_row[1] or 0
+
+    user_cursor = await db.execute("SELECT COUNT(*) FROM users WHERE role = 'client'")
+    user_count = (await user_cursor.fetchone())[0]
+
+    return {
+        "products": prod_count,
+        "orders": order_count,
+        "users": user_count,
+        "revenue": revenue
+    }
 
 # ─── Routes Likes ──────────────────────────────────────────────────────────────
 @app.post("/api/products/{product_id}/like", tags=["Likes"])
@@ -536,7 +642,7 @@ async def like_product(
             "DELETE FROM product_likes WHERE user_id = ? AND product_id = ?",
             (user["id"], product_id)
         )
-        await db.execute("UPDATE products SET likes = likes - 1 WHERE id = ?", (product_id,))
+        await db.execute("UPDATE products SET likes = MAX(0, likes - 1) WHERE id = ?", (product_id,))
         liked = False
     else:
         await db.execute(
@@ -548,10 +654,14 @@ async def like_product(
 
     await db.commit()
 
-    # Récupérer le nouveau total de likes
     cursor = await db.execute("SELECT likes FROM products WHERE id = ?", (product_id,))
     row = await cursor.fetchone()
     likes_count = row["likes"] if row else 0
+
+    await manager.broadcast({
+        "event": "product_liked",
+        "data": {"product_id": product_id, "likes": likes_count}
+    })
 
     return {"liked": liked, "likes": likes_count}
 
@@ -565,12 +675,20 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
-# ─── Route Santé & Accueil ────────────────────────────────────────────────────
+# ─── Routes pages HTML ────────────────────────────────────────────────────────
+@app.get("/admin")
+async def admin_panel():
+    """Sert le panneau d'administration"""
+    if os.path.exists("admin.html"):
+        return FileResponse("admin.html")
+    raise HTTPException(status_code=404, detail="Fichier admin.html introuvable. Ajoutez-le au même dossier que main.py.")
+
 @app.get("/")
 async def accueil():
+    """Sert la boutique frontend"""
     if os.path.exists("index.html"):
         return FileResponse("index.html")
-    return {"message": "Digital Fashion Store API", "status": "online"}
+    return {"message": "Digital Fashion Store API", "status": "online", "docs": "/docs"}
 
 @app.get("/api/health", tags=["System"])
 async def health_check():
