@@ -1,0 +1,10 @@
+{
+  "build": {
+    "builder": "nixpacks"
+  },
+  "deploy": {
+    "restartPolicyType": "on_failure",
+    "numReplicas": 1,
+    "startCommand": "uvicorn serveur:app --host 0.0.0.0 --port $PORT"
+  }
+}
