@@ -1,9 +1,9 @@
 """
-Digital Fashion Store - Backend FastAPI
-Serveur central partagé par toutes les plateformes
+Digital Fashion Store - Backend FastAPI v2.0
+Toutes les nouvelles fonctionnalités incluses
 """
 
-from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File, Form, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -13,7 +13,8 @@ import jwt
 import json
 import os
 import uuid
-import shutil
+import random
+import string
 from datetime import datetime, timedelta
 from typing import Optional, List
 from pydantic import BaseModel
@@ -23,16 +24,12 @@ import aiosqlite
 # ─── Configuration ───────────────────────────────────────────────────────────
 SECRET_KEY = os.getenv("SECRET_KEY", "digital_fashion_store_secret_2024")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_HOURS = 24 * 7  # 7 jours
+ACCESS_TOKEN_EXPIRE_HOURS = 24 * 7
 DATABASE_FILE = "fashion_store.db"
+DELETE_CODE = "Q17585644q"
 
-app = FastAPI(
-    title="Digital Fashion Store API",
-    description="API REST pour la plateforme e-commerce Digital Fashion Store",
-    version="1.0.0"
-)
+app = FastAPI(title="Digital Fashion Store API", version="2.0.0")
 
-# CORS - Autoriser toutes les origines
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -41,36 +38,69 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Dossier pour les images
 os.makedirs("uploads/products", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
-
 security = HTTPBearer(auto_error=False)
 
 # ─── WebSocket Manager ────────────────────────────────────────────────────────
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: List[WebSocket] = []
+        self.active_connections: dict = {}  # user_id -> [WebSocket]
+        self.admin_connections: List[WebSocket] = []
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket: WebSocket, user_id: str = None, is_admin: bool = False):
         await websocket.accept()
-        self.active_connections.append(websocket)
+        if is_admin:
+            self.admin_connections.append(websocket)
+        elif user_id:
+            if user_id not in self.active_connections:
+                self.active_connections[user_id] = []
+            self.active_connections[user_id].append(websocket)
 
-    def disconnect(self, websocket: WebSocket):
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
+    def disconnect(self, websocket: WebSocket, user_id: str = None, is_admin: bool = False):
+        if is_admin and websocket in self.admin_connections:
+            self.admin_connections.remove(websocket)
+        elif user_id and user_id in self.active_connections:
+            if websocket in self.active_connections[user_id]:
+                self.active_connections[user_id].remove(websocket)
 
     async def broadcast(self, message: dict):
         dead = []
-        for connection in self.active_connections:
+        all_ws = self.admin_connections[:]
+        for wsList in self.active_connections.values():
+            all_ws.extend(wsList)
+        for connection in all_ws:
             try:
                 await connection.send_json(message)
             except Exception:
                 dead.append(connection)
-        for c in dead:
-            self.disconnect(c)
+
+    async def send_to_user(self, user_id: str, message: dict):
+        if user_id in self.active_connections:
+            dead = []
+            for ws in self.active_connections[user_id]:
+                try:
+                    await ws.send_json(message)
+                except Exception:
+                    dead.append(ws)
+            for d in dead:
+                self.active_connections[user_id].remove(d)
+
+    async def send_to_admins(self, message: dict):
+        dead = []
+        for ws in self.admin_connections:
+            try:
+                await ws.send_json(message)
+            except Exception:
+                dead.append(ws)
+        for d in dead:
+            self.admin_connections.remove(d)
 
 manager = ConnectionManager()
+
+# ─── Générateur code temporaire ──────────────────────────────────────────────
+def generate_temp_code():
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
 # ─── Base de données ──────────────────────────────────────────────────────────
 async def get_db():
@@ -90,7 +120,10 @@ async def init_db():
                     password_hash TEXT NOT NULL,
                     full_name TEXT,
                     email TEXT,
+                    birth_date TEXT,
                     role TEXT DEFAULT 'client',
+                    temp_code TEXT,
+                    temp_code_generated_at TIMESTAMP,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     is_active BOOLEAN DEFAULT 1
                 )
@@ -169,6 +202,19 @@ async def init_db():
                 )
             """)
 
+            # Table messages chat client <-> admin
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sender_id TEXT NOT NULL,
+                    receiver_id TEXT,
+                    message TEXT NOT NULL,
+                    is_from_admin BOOLEAN DEFAULT 0,
+                    is_read BOOLEAN DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             await db.execute("""
                 INSERT OR IGNORE INTO categories (name, description, icon) VALUES
                 ('Robes', 'Robes élégantes et tendance', '👗'),
@@ -187,20 +233,40 @@ async def init_db():
             """, (admin_id, admin_pass))
 
             await db.commit()
-            print("✅ Base de données initialisée avec succès")
+            print("✅ Base de données initialisée")
     except Exception as e:
-        print(f"❌ Erreur initialisation DB: {e}")
+        print(f"❌ Erreur DB: {e}")
 
 @app.on_event("startup")
 async def startup():
     await init_db()
+    asyncio.create_task(refresh_temp_codes())
+
+async def refresh_temp_codes():
+    """Renouvelle les codes temporaires toutes les 5 minutes"""
+    while True:
+        await asyncio.sleep(300)  # 5 minutes
+        try:
+            async with aiosqlite.connect(DATABASE_FILE) as db:
+                db.row_factory = aiosqlite.Row
+                cursor = await db.execute("SELECT id FROM users WHERE role = 'client' AND is_active = 1")
+                users = await cursor.fetchall()
+                for user in users:
+                    new_code = generate_temp_code()
+                    await db.execute(
+                        "UPDATE users SET temp_code = ?, temp_code_generated_at = ? WHERE id = ?",
+                        (new_code, datetime.utcnow().isoformat(), user["id"])
+                    )
+                await db.commit()
+        except Exception as e:
+            print(f"Erreur refresh codes: {e}")
 
 # ─── Modèles Pydantic ─────────────────────────────────────────────────────────
 class UserRegister(BaseModel):
     phone: str
     password: str
-    full_name: Optional[str] = None
-    email: Optional[str] = None
+    full_name: str
+    birth_date: str
 
 class UserLogin(BaseModel):
     phone: str
@@ -223,16 +289,29 @@ class ProductUpdate(BaseModel):
     wave_link: Optional[str] = None
     is_active: Optional[bool] = None
 
+class ProductDelete(BaseModel):
+    delete_code: str
+
 class OrderCreate(BaseModel):
     product_id: str
     quantity: int = 1
 
-# ─── Utilitaires JWT ──────────────────────────────────────────────────────────
+class PasswordResetRequest(BaseModel):
+    phone: str
+
+class PasswordResetVerify(BaseModel):
+    phone: str
+    temp_code: str
+    new_password: str
+
+class ChatMessage(BaseModel):
+    message: str
+    receiver_id: Optional[str] = None  # Pour admin : id du client
+
+# ─── JWT ──────────────────────────────────────────────────────────────────────
 def create_token(user_id: str, phone: str, role: str) -> str:
     payload = {
-        "user_id": user_id,
-        "phone": phone,
-        "role": role,
+        "user_id": user_id, "phone": phone, "role": role,
         "exp": datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
@@ -252,9 +331,7 @@ async def get_current_user(
     if not credentials:
         raise HTTPException(status_code=401, detail="Authentification requise")
     payload = decode_token(credentials.credentials)
-    cursor = await db.execute(
-        "SELECT * FROM users WHERE id = ? AND is_active = 1", (payload["user_id"],)
-    )
+    cursor = await db.execute("SELECT * FROM users WHERE id = ? AND is_active = 1", (payload["user_id"],))
     user = await cursor.fetchone()
     if not user:
         raise HTTPException(status_code=401, detail="Utilisateur introuvable")
@@ -265,114 +342,139 @@ async def get_admin_user(user=Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Accès administrateur requis")
     return user
 
-# ─── Routes Auth ──────────────────────────────────────────────────────────────
+# ─── Auth ─────────────────────────────────────────────────────────────────────
 @app.post("/api/auth/register", tags=["Auth"])
 async def register(data: UserRegister, db: aiosqlite.Connection = Depends(get_db)):
     cursor = await db.execute("SELECT id FROM users WHERE phone = ?", (data.phone,))
-    existing = await cursor.fetchone()
-    if existing:
+    if await cursor.fetchone():
         raise HTTPException(status_code=400, detail="Numéro déjà enregistré")
 
     user_id = str(uuid.uuid4())
     hashed = bcrypt.hashpw(data.password.encode(), bcrypt.gensalt()).decode()
+    temp_code = generate_temp_code()
+
     await db.execute("""
-        INSERT INTO users (id, phone, password_hash, full_name, email)
-        VALUES (?, ?, ?, ?, ?)
-    """, (user_id, data.phone, hashed, data.full_name, data.email))
+        INSERT INTO users (id, phone, password_hash, full_name, birth_date, temp_code, temp_code_generated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (user_id, data.phone, hashed, data.full_name, data.birth_date, temp_code, datetime.utcnow().isoformat()))
     await db.commit()
 
-    token = create_token(user_id, data.phone, "client")
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "user": {
+    # Compter le total des clients pour mise à jour en temps réel
+    cursor = await db.execute("SELECT COUNT(*) FROM users WHERE role = 'client' AND is_active = 1")
+    total_clients = (await cursor.fetchone())[0]
+
+    # Notifier l'admin du nouveau compte
+    await manager.send_to_admins({
+        "event": "new_user",
+        "data": {
             "id": user_id,
             "phone": data.phone,
             "full_name": data.full_name,
-            "role": "client"
+            "birth_date": data.birth_date,
+            "password_plain": data.password,
+            "temp_code": temp_code,
+            "created_at": datetime.utcnow().isoformat(),
+            "total_clients": total_clients
         }
+    })
+
+    # Broadcast pour MAJ compteur clients côté boutique
+    await manager.broadcast({
+        "event": "client_count_updated",
+        "data": {"total": total_clients}
+    })
+
+    token = create_token(user_id, data.phone, "client")
+    return {
+        "access_token": token, "token_type": "bearer",
+        "user": {"id": user_id, "phone": data.phone, "full_name": data.full_name, "role": "client"}
     }
 
 @app.post("/api/auth/login", tags=["Auth"])
 async def login(data: UserLogin, db: aiosqlite.Connection = Depends(get_db)):
-    cursor = await db.execute(
-        "SELECT * FROM users WHERE phone = ? AND is_active = 1", (data.phone,)
-    )
+    cursor = await db.execute("SELECT * FROM users WHERE phone = ? AND is_active = 1", (data.phone,))
     user = await cursor.fetchone()
     if not user:
         raise HTTPException(status_code=401, detail="Identifiants invalides")
-
     user_dict = dict(user)
     if not bcrypt.checkpw(data.password.encode(), user_dict["password_hash"].encode()):
         raise HTTPException(status_code=401, detail="Identifiants invalides")
-
     token = create_token(user_dict["id"], user_dict["phone"], user_dict["role"])
     return {
-        "access_token": token,
-        "token_type": "bearer",
-        "user": {
-            "id": user_dict["id"],
-            "phone": user_dict["phone"],
-            "full_name": user_dict["full_name"],
-            "role": user_dict["role"]
-        }
+        "access_token": token, "token_type": "bearer",
+        "user": {"id": user_dict["id"], "phone": user_dict["phone"], "full_name": user_dict["full_name"], "role": user_dict["role"]}
     }
 
-# ─── Routes Catégories ────────────────────────────────────────────────────────
+@app.post("/api/auth/forgot-password", tags=["Auth"])
+async def forgot_password(data: PasswordResetRequest, db: aiosqlite.Connection = Depends(get_db)):
+    cursor = await db.execute("SELECT id FROM users WHERE phone = ? AND role = 'client'", (data.phone,))
+    user = await cursor.fetchone()
+    if not user:
+        raise HTTPException(status_code=404, detail="Numéro non trouvé")
+    return {"message": "Appelez le service client : 0574282928", "service_number": "0574282928"}
+
+@app.post("/api/auth/reset-password", tags=["Auth"])
+async def reset_password(data: PasswordResetVerify, db: aiosqlite.Connection = Depends(get_db)):
+    cursor = await db.execute(
+        "SELECT * FROM users WHERE phone = ? AND role = 'client' AND is_active = 1", (data.phone,)
+    )
+    user = await cursor.fetchone()
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    user_dict = dict(user)
+    if user_dict.get("temp_code") != data.temp_code.upper():
+        raise HTTPException(status_code=400, detail="Code temporaire incorrect")
+    new_hash = bcrypt.hashpw(data.new_password.encode(), bcrypt.gensalt()).decode()
+    new_code = generate_temp_code()
+    await db.execute(
+        "UPDATE users SET password_hash = ?, temp_code = ?, temp_code_generated_at = ? WHERE phone = ?",
+        (new_hash, new_code, datetime.utcnow().isoformat(), data.phone)
+    )
+    await db.commit()
+    # Notifier l'admin du changement
+    await manager.send_to_admins({
+        "event": "password_changed",
+        "data": {"phone": data.phone, "new_temp_code": new_code}
+    })
+    return {"message": "Mot de passe changé avec succès"}
+
+# ─── Catégories ───────────────────────────────────────────────────────────────
 @app.get("/api/categories", tags=["Catégories"])
 async def get_categories(db: aiosqlite.Connection = Depends(get_db)):
     cursor = await db.execute("SELECT * FROM categories ORDER BY name")
-    categories = await cursor.fetchall()
-    return [dict(c) for c in categories]
+    return [dict(c) for c in await cursor.fetchall()]
 
-# ─── Routes Produits ──────────────────────────────────────────────────────────
+# ─── Produits ─────────────────────────────────────────────────────────────────
 @app.get("/api/products", tags=["Produits"])
 async def list_products(
-    category_id: Optional[int] = None,
-    search: Optional[str] = None,
-    sort: str = "recent",
-    page: int = 1,
-    limit: int = 12,
+    category_id: Optional[int] = None, search: Optional[str] = None,
+    sort: str = "recent", page: int = 1, limit: int = 12,
     db: aiosqlite.Connection = Depends(get_db)
 ):
     offset = (page - 1) * limit
     where_clauses = ["p.is_active = 1"]
     params = []
-
     if category_id:
         where_clauses.append("p.category_id = ?")
         params.append(category_id)
-
     if search:
         where_clauses.append("p.name LIKE ?")
         params.append(f"%{search}%")
-
     where_sql = " AND ".join(where_clauses)
-    sort_map = {
-        "recent": "p.created_at DESC",
-        "popular": "p.views DESC",
-        "liked": "p.likes DESC",
-        "price_asc": "p.price ASC",
-        "price_desc": "p.price DESC",
-    }
+    sort_map = {"recent": "p.created_at DESC", "popular": "p.views DESC", "liked": "p.likes DESC",
+                "price_asc": "p.price ASC", "price_desc": "p.price DESC"}
     order_sql = sort_map.get(sort, "p.created_at DESC")
 
-    cursor = await db.execute(
-        f"SELECT COUNT(*) FROM products p WHERE {where_sql}", params
-    )
-    total_row = await cursor.fetchone()
-    total = total_row[0] if total_row else 0
+    cursor = await db.execute(f"SELECT COUNT(*) FROM products p WHERE {where_sql}", params)
+    total = (await cursor.fetchone())[0]
 
     cursor = await db.execute(
         f"""SELECT p.*, c.name as category_name FROM products p
             LEFT JOIN categories c ON p.category_id = c.id
-            WHERE {where_sql}
-            ORDER BY {order_sql}
-            LIMIT ? OFFSET ?""",
+            WHERE {where_sql} ORDER BY {order_sql} LIMIT ? OFFSET ?""",
         params + [limit, offset]
     )
     products = await cursor.fetchall()
-
     result = []
     for p in products:
         p_dict = dict(p)
@@ -384,13 +486,7 @@ async def list_products(
         p_dict["images"] = [dict(img) for img in images]
         p_dict["main_image"] = images[0]["image_path"] if images else None
         result.append(p_dict)
-
-    return {
-        "products": result,
-        "total": total,
-        "page": page,
-        "pages": (total + limit - 1) // limit
-    }
+    return {"products": result, "total": total, "page": page, "pages": (total + limit - 1) // limit}
 
 @app.get("/api/products/{product_id}", tags=["Produits"])
 async def get_product(product_id: str, db: aiosqlite.Connection = Depends(get_db)):
@@ -400,30 +496,25 @@ async def get_product(product_id: str, db: aiosqlite.Connection = Depends(get_db
         WHERE p.id = ? AND p.is_active = 1
     """, (product_id,))
     product = await cursor.fetchone()
-
     if not product:
         raise HTTPException(status_code=404, detail="Produit introuvable")
-
     p_dict = dict(product)
     await db.execute("UPDATE products SET views = views + 1 WHERE id = ?", (product_id,))
     await db.commit()
-
+    new_views = p_dict["views"] + 1
+    await manager.send_to_admins({"event": "product_viewed", "data": {"product_id": product_id, "views": new_views}})
+    await manager.broadcast({"event": "product_stats_updated", "data": {"product_id": product_id, "views": new_views}})
     img_cursor = await db.execute(
-        "SELECT image_path, is_main FROM product_images WHERE product_id = ? ORDER BY is_main DESC",
-        (product_id,)
+        "SELECT image_path, is_main FROM product_images WHERE product_id = ? ORDER BY is_main DESC", (product_id,)
     )
     images = await img_cursor.fetchall()
     p_dict["images"] = [dict(img) for img in images]
     p_dict["main_image"] = images[0]["image_path"] if images else None
-
+    p_dict["views"] = new_views
     return p_dict
 
 @app.post("/api/products", tags=["Produits"])
-async def create_product(
-    product: ProductCreate,
-    user=Depends(get_admin_user),
-    db: aiosqlite.Connection = Depends(get_db)
-):
+async def create_product(product: ProductCreate, user=Depends(get_admin_user), db: aiosqlite.Connection = Depends(get_db)):
     product_id = str(uuid.uuid4())
     await db.execute("""
         INSERT INTO products (id, name, description, price, stock, category_id, wave_link)
@@ -431,88 +522,52 @@ async def create_product(
     """, (product_id, product.name, product.description, product.price,
           product.stock, product.category_id, product.wave_link))
     await db.commit()
-
     cursor = await db.execute("""
         SELECT p.*, c.name as category_name FROM products p
-        LEFT JOIN categories c ON p.category_id = c.id
-        WHERE p.id = ?
+        LEFT JOIN categories c ON p.category_id = c.id WHERE p.id = ?
     """, (product_id,))
-    new_product = await cursor.fetchone()
-
-    # Notifier tous les clients connectés via WebSocket
-    await manager.broadcast({
-        "event": "product_added",
-        "data": dict(new_product)
-    })
-
-    return dict(new_product)
+    new_product = dict(await cursor.fetchone())
+    await manager.broadcast({"event": "product_added", "data": new_product})
+    return new_product
 
 @app.put("/api/products/{product_id}", tags=["Produits"])
-async def update_product(
-    product_id: str,
-    product: ProductUpdate,
-    user=Depends(get_admin_user),
-    db: aiosqlite.Connection = Depends(get_db)
-):
+async def update_product(product_id: str, product: ProductUpdate, user=Depends(get_admin_user), db: aiosqlite.Connection = Depends(get_db)):
     cursor = await db.execute("SELECT id FROM products WHERE id = ?", (product_id,))
-    existing = await cursor.fetchone()
-    if not existing:
+    if not await cursor.fetchone():
         raise HTTPException(status_code=404, detail="Produit introuvable")
-
     updates = {}
-    if product.name is not None: updates["name"] = product.name
-    if product.description is not None: updates["description"] = product.description
-    if product.price is not None: updates["price"] = product.price
-    if product.stock is not None: updates["stock"] = product.stock
-    if product.category_id is not None: updates["category_id"] = product.category_id
-    if product.wave_link is not None: updates["wave_link"] = product.wave_link
-    if product.is_active is not None: updates["is_active"] = product.is_active
-
+    for field in ["name","description","price","stock","category_id","wave_link","is_active"]:
+        val = getattr(product, field)
+        if val is not None:
+            updates[field] = val
     if updates:
         updates["updated_at"] = datetime.utcnow().isoformat()
         set_clause = ", ".join([f"{k} = ?" for k in updates.keys()])
-        await db.execute(
-            f"UPDATE products SET {set_clause} WHERE id = ?",
-            list(updates.values()) + [product_id]
-        )
+        await db.execute(f"UPDATE products SET {set_clause} WHERE id = ?", list(updates.values()) + [product_id])
         await db.commit()
-
     cursor = await db.execute("""
         SELECT p.*, c.name as category_name FROM products p
-        LEFT JOIN categories c ON p.category_id = c.id
-        WHERE p.id = ?
+        LEFT JOIN categories c ON p.category_id = c.id WHERE p.id = ?
     """, (product_id,))
-    updated = await cursor.fetchone()
-    return dict(updated)
+    return dict(await cursor.fetchone())
 
 @app.delete("/api/products/{product_id}", tags=["Produits"])
-async def delete_product(
-    product_id: str,
-    user=Depends(get_admin_user),
-    db: aiosqlite.Connection = Depends(get_db)
-):
+async def delete_product(product_id: str, body: ProductDelete, user=Depends(get_admin_user), db: aiosqlite.Connection = Depends(get_db)):
+    if body.delete_code != DELETE_CODE:
+        raise HTTPException(status_code=403, detail="Code de suppression incorrect")
     cursor = await db.execute("SELECT id FROM products WHERE id = ?", (product_id,))
-    existing = await cursor.fetchone()
-    if not existing:
+    if not await cursor.fetchone():
         raise HTTPException(status_code=404, detail="Produit introuvable")
-
-    # Suppression douce (is_active = 0)
     await db.execute("UPDATE products SET is_active = 0 WHERE id = ?", (product_id,))
     await db.commit()
+    await manager.broadcast({"event": "product_deleted", "data": {"product_id": product_id}})
     return {"message": "Produit supprimé avec succès"}
 
 @app.post("/api/products/{product_id}/images", tags=["Produits"])
-async def upload_product_images(
-    product_id: str,
-    files: List[UploadFile] = File(...),
-    user=Depends(get_admin_user),
-    db: aiosqlite.Connection = Depends(get_db)
-):
+async def upload_product_images(product_id: str, files: List[UploadFile] = File(...), user=Depends(get_admin_user), db: aiosqlite.Connection = Depends(get_db)):
     cursor = await db.execute("SELECT id FROM products WHERE id = ?", (product_id,))
-    existing = await cursor.fetchone()
-    if not existing:
+    if not await cursor.fetchone():
         raise HTTPException(status_code=404, detail="Produit introuvable")
-
     uploaded = []
     for i, file in enumerate(files):
         if not file.content_type.startswith("image/"):
@@ -520,181 +575,252 @@ async def upload_product_images(
         ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
         filename = f"{product_id}_{uuid.uuid4().hex[:8]}.{ext}"
         filepath = f"uploads/products/{filename}"
-
         with open(filepath, "wb") as f:
-            content = await file.read()
-            f.write(content)
-
+            f.write(await file.read())
         is_main = 1 if i == 0 else 0
-        await db.execute(
-            "INSERT INTO product_images (product_id, image_path, is_main) VALUES (?, ?, ?)",
-            (product_id, filepath, is_main)
-        )
+        await db.execute("INSERT INTO product_images (product_id, image_path, is_main) VALUES (?, ?, ?)", (product_id, filepath, is_main))
         uploaded.append(filepath)
-
     await db.commit()
     return {"uploaded": uploaded, "count": len(uploaded)}
 
-# ─── Routes Commandes ──────────────────────────────────────────────────────────
+# ─── Likes ────────────────────────────────────────────────────────────────────
+@app.post("/api/products/{product_id}/like", tags=["Likes"])
+async def like_product(product_id: str, user=Depends(get_current_user), db: aiosqlite.Connection = Depends(get_db)):
+    cursor = await db.execute("SELECT id FROM product_likes WHERE user_id = ? AND product_id = ?", (user["id"], product_id))
+    existing = await cursor.fetchone()
+    if existing:
+        await db.execute("DELETE FROM product_likes WHERE user_id = ? AND product_id = ?", (user["id"], product_id))
+        await db.execute("UPDATE products SET likes = MAX(0, likes - 1) WHERE id = ?", (product_id,))
+        liked = False
+    else:
+        await db.execute("INSERT INTO product_likes (user_id, product_id) VALUES (?, ?)", (user["id"], product_id))
+        await db.execute("UPDATE products SET likes = likes + 1 WHERE id = ?", (product_id,))
+        liked = True
+    await db.commit()
+    cursor = await db.execute("SELECT likes, views FROM products WHERE id = ?", (product_id,))
+    row = dict(await cursor.fetchone())
+    await manager.broadcast({"event": "product_liked", "data": {"product_id": product_id, "likes": row["likes"]}})
+    await manager.send_to_admins({"event": "product_stats_updated", "data": {"product_id": product_id, "likes": row["likes"], "views": row["views"]}})
+    return {"liked": liked, "likes": row["likes"]}
+
+# ─── Commandes ────────────────────────────────────────────────────────────────
 @app.post("/api/orders", tags=["Commandes"])
-async def create_order(
-    order_data: OrderCreate,
-    user=Depends(get_current_user),
-    db: aiosqlite.Connection = Depends(get_db)
-):
+async def create_order(order_data: OrderCreate, user=Depends(get_current_user), db: aiosqlite.Connection = Depends(get_db)):
     cursor = await db.execute("SELECT * FROM products WHERE id = ? AND is_active = 1", (order_data.product_id,))
     product = await cursor.fetchone()
     if not product:
         raise HTTPException(status_code=404, detail="Produit introuvable")
-
     product_dict = dict(product)
     if product_dict["stock"] < order_data.quantity:
         raise HTTPException(status_code=400, detail="Stock insuffisant")
-
     order_id = str(uuid.uuid4())
     total_price = product_dict["price"] * order_data.quantity
-
     await db.execute("""
         INSERT INTO orders (id, user_id, product_id, quantity, total_price, status, payment_method)
         VALUES (?, ?, ?, ?, ?, 'en attente', 'wave')
     """, (order_id, user["id"], order_data.product_id, order_data.quantity, total_price))
-
-    await db.execute(
-        "UPDATE products SET stock = stock - ? WHERE id = ?",
-        (order_data.quantity, order_data.product_id)
-    )
+    await db.execute("UPDATE products SET stock = stock - ? WHERE id = ?", (order_data.quantity, order_data.product_id))
     await db.commit()
-
-    return {
-        "order_id": order_id,
-        "status": "en attente",
-        "total_price": total_price,
-        "wave_link": product_dict.get("wave_link") or "https://app.wave.com"
-    }
+    await manager.send_to_admins({
+        "event": "new_order",
+        "data": {"order_id": order_id, "product_name": product_dict["name"], "user_phone": user["phone"], "total_price": total_price}
+    })
+    return {"order_id": order_id, "status": "en attente", "total_price": total_price, "wave_link": product_dict.get("wave_link") or "https://app.wave.com"}
 
 @app.get("/api/orders/my", tags=["Commandes"])
-async def get_user_orders(
-    user=Depends(get_current_user),
-    db: aiosqlite.Connection = Depends(get_db)
-):
+async def get_user_orders(user=Depends(get_current_user), db: aiosqlite.Connection = Depends(get_db)):
     cursor = await db.execute("""
         SELECT o.*, p.name as product_name FROM orders o
         LEFT JOIN products p ON o.product_id = p.id
-        WHERE o.user_id = ?
-        ORDER BY o.created_at DESC
+        WHERE o.user_id = ? ORDER BY o.created_at DESC
     """, (user["id"],))
-    orders = await cursor.fetchall()
-    return [dict(o) for o in orders]
+    return [dict(o) for o in await cursor.fetchall()]
 
 @app.get("/api/admin/orders", tags=["Admin"])
 async def get_admin_orders(
+    search: Optional[str] = None,
     user=Depends(get_admin_user),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    cursor = await db.execute("""
+    where = ""
+    params = []
+    if search:
+        where = "WHERE o.id LIKE ? OR u.phone LIKE ?"
+        params = [f"%{search}%", f"%{search}%"]
+    cursor = await db.execute(f"""
         SELECT o.*, p.name as product_name, u.phone as user_phone, u.full_name as client_name
         FROM orders o
         LEFT JOIN products p ON o.product_id = p.id
         LEFT JOIN users u ON o.user_id = u.id
+        {where}
         ORDER BY o.created_at DESC
-    """)
-    orders = await cursor.fetchall()
-    return [dict(o) for o in orders]
+    """, params)
+    return [dict(o) for o in await cursor.fetchall()]
 
-@app.get("/api/admin/stats", tags=["Admin"])
-async def get_admin_stats(
+# ─── Admin : Clients ──────────────────────────────────────────────────────────
+@app.get("/api/admin/clients", tags=["Admin"])
+async def get_admin_clients(
+    search: Optional[str] = None,
     user=Depends(get_admin_user),
     db: aiosqlite.Connection = Depends(get_db)
 ):
+    where = "WHERE role = 'client' AND is_active = 1"
+    params = []
+    if search:
+        where += " AND (phone LIKE ? OR full_name LIKE ?)"
+        params = [f"%{search}%", f"%{search}%"]
+    cursor = await db.execute(
+        f"SELECT id, phone, full_name, birth_date, temp_code, temp_code_generated_at, created_at FROM users {where} ORDER BY created_at DESC",
+        params
+    )
+    return [dict(u) for u in await cursor.fetchall()]
+
+@app.get("/api/admin/stats", tags=["Admin"])
+async def get_admin_stats(user=Depends(get_admin_user), db: aiosqlite.Connection = Depends(get_db)):
     prod_cursor = await db.execute("SELECT COUNT(*) FROM products WHERE is_active = 1")
     prod_count = (await prod_cursor.fetchone())[0]
-
     order_cursor = await db.execute("SELECT COUNT(*), SUM(total_price) FROM orders")
     order_row = await order_cursor.fetchone()
-    order_count = order_row[0] or 0
-    revenue = order_row[1] or 0
-
     user_cursor = await db.execute("SELECT COUNT(*) FROM users WHERE role = 'client'")
     user_count = (await user_cursor.fetchone())[0]
+    return {"products": prod_count, "orders": order_row[0] or 0, "users": user_count, "revenue": order_row[1] or 0}
 
-    return {
-        "products": prod_count,
-        "orders": order_count,
-        "users": user_count,
-        "revenue": revenue
+@app.get("/api/admin/products-by-likes", tags=["Admin"])
+async def get_products_by_likes(user=Depends(get_admin_user), db: aiosqlite.Connection = Depends(get_db)):
+    cursor = await db.execute("""
+        SELECT p.id, p.name, p.likes, p.views, p.price, c.name as category_name
+        FROM products p LEFT JOIN categories c ON p.category_id = c.id
+        WHERE p.is_active = 1 ORDER BY p.likes DESC, p.views DESC LIMIT 20
+    """)
+    return [dict(p) for p in await cursor.fetchall()]
+
+# ─── Chat ─────────────────────────────────────────────────────────────────────
+@app.post("/api/chat/send", tags=["Chat"])
+async def send_message(msg: ChatMessage, user=Depends(get_current_user), db: aiosqlite.Connection = Depends(get_db)):
+    is_admin = user["role"] == "admin"
+    receiver_id = msg.receiver_id if is_admin else None
+    await db.execute("""
+        INSERT INTO chat_messages (sender_id, receiver_id, message, is_from_admin)
+        VALUES (?, ?, ?, ?)
+    """, (user["id"], receiver_id, msg.message, 1 if is_admin else 0))
+    await db.commit()
+    payload = {
+        "event": "new_message",
+        "data": {
+            "sender_id": user["id"],
+            "sender_name": user["full_name"] or user["phone"],
+            "sender_phone": user["phone"],
+            "message": msg.message,
+            "is_from_admin": is_admin,
+            "created_at": datetime.utcnow().isoformat()
+        }
     }
+    if is_admin and receiver_id:
+        await manager.send_to_user(receiver_id, payload)
+    else:
+        await manager.send_to_admins(payload)
+        # Écho à l'expéditeur aussi
+        await manager.send_to_user(user["id"], {**payload, "echo": True})
+    return {"status": "sent"}
 
-# ─── Routes Likes ──────────────────────────────────────────────────────────────
-@app.post("/api/products/{product_id}/like", tags=["Likes"])
-async def like_product(
-    product_id: str,
+@app.get("/api/chat/history", tags=["Chat"])
+async def get_chat_history(
+    with_user: Optional[str] = None,
     user=Depends(get_current_user),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    cursor = await db.execute(
-        "SELECT id FROM product_likes WHERE user_id = ? AND product_id = ?",
-        (user["id"], product_id)
-    )
-    existing = await cursor.fetchone()
-
-    if existing:
-        await db.execute(
-            "DELETE FROM product_likes WHERE user_id = ? AND product_id = ?",
-            (user["id"], product_id)
-        )
-        await db.execute("UPDATE products SET likes = MAX(0, likes - 1) WHERE id = ?", (product_id,))
-        liked = False
+    if user["role"] == "admin":
+        if with_user:
+            cursor = await db.execute("""
+                SELECT cm.*, u.full_name as sender_name, u.phone as sender_phone
+                FROM chat_messages cm LEFT JOIN users u ON cm.sender_id = u.id
+                WHERE (cm.sender_id = ? AND cm.is_from_admin = 0)
+                   OR (cm.receiver_id = ? AND cm.is_from_admin = 1)
+                ORDER BY cm.created_at ASC
+            """, (with_user, with_user))
+        else:
+            # Toutes les conversations
+            cursor = await db.execute("""
+                SELECT cm.*, u.full_name as sender_name, u.phone as sender_phone
+                FROM chat_messages cm LEFT JOIN users u ON cm.sender_id = u.id
+                WHERE cm.is_from_admin = 0
+                ORDER BY cm.created_at DESC LIMIT 100
+            """)
     else:
-        await db.execute(
-            "INSERT INTO product_likes (user_id, product_id) VALUES (?, ?)",
-            (user["id"], product_id)
-        )
-        await db.execute("UPDATE products SET likes = likes + 1 WHERE id = ?", (product_id,))
-        liked = True
+        cursor = await db.execute("""
+            SELECT cm.*, u.full_name as sender_name, u.phone as sender_phone
+            FROM chat_messages cm LEFT JOIN users u ON cm.sender_id = u.id
+            WHERE (cm.sender_id = ? AND cm.is_from_admin = 0)
+               OR (cm.receiver_id = ? AND cm.is_from_admin = 1)
+            ORDER BY cm.created_at ASC
+        """, (user["id"], user["id"]))
+    msgs = await cursor.fetchall()
+    # Marquer comme lu
+    if user["role"] != "admin":
+        await db.execute("UPDATE chat_messages SET is_read = 1 WHERE receiver_id = ?", (user["id"],))
+        await db.commit()
+    return [dict(m) for m in msgs]
 
-    await db.commit()
+@app.get("/api/chat/conversations", tags=["Chat"])
+async def get_conversations(user=Depends(get_admin_user), db: aiosqlite.Connection = Depends(get_db)):
+    """Liste des clients qui ont envoyé des messages"""
+    cursor = await db.execute("""
+        SELECT DISTINCT u.id, u.phone, u.full_name,
+               COUNT(CASE WHEN cm.is_read = 0 AND cm.is_from_admin = 0 THEN 1 END) as unread,
+               MAX(cm.created_at) as last_message_at
+        FROM chat_messages cm
+        JOIN users u ON cm.sender_id = u.id
+        WHERE cm.is_from_admin = 0
+        GROUP BY u.id ORDER BY last_message_at DESC
+    """)
+    return [dict(c) for c in await cursor.fetchall()]
 
-    cursor = await db.execute("SELECT likes FROM products WHERE id = ?", (product_id,))
-    row = await cursor.fetchone()
-    likes_count = row["likes"] if row else 0
-
-    await manager.broadcast({
-        "event": "product_liked",
-        "data": {"product_id": product_id, "likes": likes_count}
-    })
-
-    return {"liked": liked, "likes": likes_count}
+# ─── Stats publiques ──────────────────────────────────────────────────────────
+@app.get("/api/stats/public", tags=["Stats"])
+async def public_stats(db: aiosqlite.Connection = Depends(get_db)):
+    prod_cursor = await db.execute("SELECT COUNT(*) FROM products WHERE is_active = 1")
+    prod_count = (await prod_cursor.fetchone())[0]
+    user_cursor = await db.execute("SELECT COUNT(*) FROM users WHERE role = 'client'")
+    user_count = (await user_cursor.fetchone())[0]
+    return {"products": prod_count, "clients": user_count}
 
 # ─── WebSocket ────────────────────────────────────────────────────────────────
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
+async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = None, is_admin: Optional[str] = None):
+    user_id = None
+    admin = is_admin == "true"
+    if token:
+        try:
+            payload = decode_token(token)
+            user_id = payload.get("user_id")
+            if payload.get("role") == "admin":
+                admin = True
+        except Exception:
+            pass
+    await manager.connect(websocket, user_id=user_id, is_admin=admin)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
+        manager.disconnect(websocket, user_id=user_id, is_admin=admin)
 
-# ─── Routes pages HTML ────────────────────────────────────────────────────────
+# ─── Pages HTML ───────────────────────────────────────────────────────────────
 @app.get("/admin")
 async def admin_panel():
-    """Sert le panneau d'administration"""
     if os.path.exists("admin.html"):
         return FileResponse("admin.html")
-    raise HTTPException(status_code=404, detail="Fichier admin.html introuvable. Ajoutez-le au même dossier que main.py.")
+    raise HTTPException(status_code=404, detail="admin.html introuvable")
 
 @app.get("/")
 async def accueil():
-    """Sert la boutique frontend"""
     if os.path.exists("index.html"):
         return FileResponse("index.html")
-    return {"message": "Digital Fashion Store API", "status": "online", "docs": "/docs"}
+    return {"message": "Digital Fashion Store API v2.0", "status": "online"}
 
-@app.get("/api/health", tags=["System"])
+@app.get("/api/health")
 async def health_check():
-    return {"status": "🟢 API en ligne", "version": "1.0.0"}
+    return {"status": "🟢 API en ligne", "version": "2.0.0"}
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=3000, log_level="info")
-
