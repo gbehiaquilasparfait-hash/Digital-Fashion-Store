@@ -155,9 +155,14 @@ tr:hover td{background:rgba(255,255,255,.018)}
 .rank-likes{color:var(--rose);font-weight:600}
 
 /* KYC PREVIEW */
-.kyc-imgs{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
-.kyc-img-box{border-radius:10px;overflow:hidden;border:1px solid var(--border);width:100px;height:80px;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:1.5rem}
+.kyc-imgs{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px}
+.kyc-img-box{border-radius:12px;overflow:hidden;border:2px solid var(--border);width:160px;height:130px;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:1.5rem;cursor:pointer;transition:border-color .2s}
+.kyc-img-box:hover{border-color:var(--accent)}
 .kyc-img-box img{width:100%;height:100%;object-fit:cover}
+.kyc-status-bar{display:flex;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)}
+/* LIGHTBOX */
+.lightbox{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.92);display:flex;align-items:center;justify-content:center;cursor:zoom-out}
+.lightbox img{max-width:90vw;max-height:90vh;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
 
 /* COMMENTS */
 .comment-item{background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:13px;margin-bottom:9px}
@@ -437,7 +442,7 @@ tr:hover td{background:rgba(255,255,255,.018)}
 
 <!-- MODAL KYC -->
 <div class="modal-overlay" id="kycModal">
-  <div class="modal-box" style="max-width:600px">
+  <div class="modal-box" style="max-width:680px">
     <div class="modal-header"><h3>📋 Documents KYC</h3><button class="btn-close" onclick="closeModal('kycModal')">✕</button></div>
     <div id="kycContent"></div>
   </div>
@@ -576,7 +581,16 @@ function handleAdminWSMessage(msg){
         ${infoRow('Téléphone', d.phone)}
         ${infoRow('Date naissance', d.birth_date||'—')}
         ${infoRow('Code temporaire', d.temp_code, true)}
-        ${isMerchant?'<div style="color:var(--text2);font-size:.8rem;margin-top:6px">📎 Documents KYC envoyés — vérifiez dans l\'onglet Marchands</div>':''}
+        ${isMerchant&&d.kyc_front_url?`
+          <div style="margin-top:12px">
+            <p style="font-size:.76rem;color:var(--text2);margin-bottom:8px">📎 Documents KYC reçus :</p>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              ${d.kyc_front_url?`<div><p style="font-size:.7rem;color:var(--text2);margin-bottom:4px">Recto</p><img src="${d.kyc_front_url}" style="width:90px;height:70px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:pointer" onclick="openLightbox('${d.kyc_front_url}')" onerror="this.style.display='none'"></div>`:''}
+              ${d.kyc_back_url?`<div><p style="font-size:.7rem;color:var(--text2);margin-bottom:4px">Verso</p><img src="${d.kyc_back_url}" style="width:90px;height:70px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:pointer" onclick="openLightbox('${d.kyc_back_url}')" onerror="this.style.display='none'"></div>`:''}
+              ${d.kyc_selfie_url?`<div><p style="font-size:.7rem;color:var(--text2);margin-bottom:4px">Selfie</p><img src="${d.kyc_selfie_url}" style="width:90px;height:70px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:pointer" onclick="openLightbox('${d.kyc_selfie_url}')" onerror="this.style.display='none'"></div>`:''}
+            </div>
+            <button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%;justify-content:center;border-radius:8px" onclick="closeModal('newClientModal');showPage('merchants',document.querySelector('.nav-item[onclick*=merchants]'))">Voir dans Marchands →</button>
+          </div>`:isMerchant?'<div style="color:var(--text2);font-size:.8rem;margin-top:6px">📎 Documents KYC envoyés — vérifiez dans l\'onglet Marchands</div>':''}
       </div>`;
     document.getElementById('newClientModal').classList.add('open');
     toast(`Nouveau ${isMerchant?'marchand':'client'} : ${d.full_name}`,'success');
@@ -846,14 +860,24 @@ async function loadMerchantsTable(search){
     const res=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
     const merchants=await res.json();
     if(!merchants.length){tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--text2);padding:36px">Aucun marchand.</td></tr>';return;}
+    const kycColor = s => s==='approved'?'78,203,122,.12':s==='rejected'?'232,92,92,.12':s==='pending'?'232,196,60,.15':'150,150,150,.12';
+    const kycText  = s => s==='approved'?'var(--green)':s==='rejected'?'var(--red)':s==='pending'?'#e8c43c':'var(--text2)';
+    const kycLabel = s => s==='approved'?'✅ Approuvé':s==='rejected'?'❌ Rejeté':s==='pending'?'⏳ En attente':'—';
     tbody.innerHTML=merchants.map(m=>`<tr>
       <td class="td-name">${m.full_name||'—'}</td>
       <td style="font-family:monospace;font-size:.84rem">${m.phone}</td>
       <td><span class="temp-code">${m.temp_code||'—'}</span></td>
-      <td><span style="font-size:.76rem;padding:3px 9px;border-radius:50px;background:rgba(${m.kyc_status==='pending'?'232,196,60,.15':m.kyc_status==='verified'?'78,203,122,.12':'150,150,150,.12'});color:${m.kyc_status==='pending'?'#e8c43c':m.kyc_status==='verified'?'var(--green)':'var(--text2)'}">${m.kyc_status==='pending'?'⏳ En attente':m.kyc_status==='verified'?'✅ Vérifié':'—'}</span></td>
+      <td>
+        ${(m.kyc_front_url||m.kyc_id_front)?`
+          <div style="display:flex;align-items:center;gap:6px">
+            <img src="${m.kyc_front_url||''}" style="width:36px;height:28px;object-fit:cover;border-radius:5px;border:1px solid var(--border);cursor:pointer" onclick="openKYC('${m.id}','${esc(m.full_name)}')" onerror="this.style.display='none'">
+            <span style="font-size:.73rem;padding:2px 8px;border-radius:50px;background:rgba(${kycColor(m.kyc_status)});color:${kycText(m.kyc_status)}">${kycLabel(m.kyc_status)}</span>
+          </div>`
+          :`<span style="color:var(--text2);font-size:.78rem">Aucun doc</span>`}
+      </td>
       <td><span class="${m.suspended?'badge-suspended':'badge-active'}">${m.suspended?'Suspendu':'Actif'}</span></td>
       <td class="td-actions">
-        ${(m.kyc_id_front||m.kyc_id_back||m.kyc_selfie)?`<button class="btn btn-ghost btn-sm" onclick="openKYC('${m.id}','${esc(m.full_name)}','${m.kyc_id_front||''}','${m.kyc_id_back||''}','${m.kyc_selfie||''}')">📋 KYC</button>`:''}
+        ${(m.kyc_front_url||m.kyc_id_front)?`<button class="btn btn-ghost btn-sm" onclick="openKYC('${m.id}','${esc(m.full_name)}')">📋 KYC</button>`:''}
         <button class="btn btn-blue btn-sm" onclick="openChatWith('${m.id}','${esc(m.full_name||m.phone)}','${m.phone}','merchant')">💬</button>
         <button class="btn btn-ghost btn-sm" onclick="loadMerchantProdsFor('${m.id}')">🛍️ Produits</button>
         ${m.suspended
@@ -871,16 +895,77 @@ function loadMerchantProdsFor(merchantId){
 }
 
 // ── KYC ───────────────────────────────────────────────────────────────────────
-function openKYC(id,name,front,back,selfie){
-  const baseUrl='https://web-production-94add.up.railway.app/';
-  document.getElementById('kycContent').innerHTML=`
-    <div style="margin-bottom:14px"><strong>${name}</strong></div>
-    <div class="kyc-imgs">
-      ${front?`<div><p style="font-size:.76rem;color:var(--text2);margin-bottom:4px">Recto</p><div class="kyc-img-box"><img src="${baseUrl}${front}" onerror="this.parentNode.innerHTML='📄'"></div></div>`:''}
-      ${back?`<div><p style="font-size:.76rem;color:var(--text2);margin-bottom:4px">Verso</p><div class="kyc-img-box"><img src="${baseUrl}${back}" onerror="this.parentNode.innerHTML='📄'"></div></div>`:''}
-      ${selfie?`<div><p style="font-size:.76rem;color:var(--text2);margin-bottom:4px">Selfie</p><div class="kyc-img-box"><img src="${baseUrl}${selfie}" onerror="this.parentNode.innerHTML='🤳'"></div></div>`:''}
-    </div>`;
+async function openKYC(merchantId, name){
+  const content = document.getElementById('kycContent');
+  content.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text2)"><span class="spinner"></span> Chargement des documents…</div>';
   document.getElementById('kycModal').classList.add('open');
+  try {
+    const res = await fetch(`${API}/admin/merchants/${merchantId}/kyc`, {headers:{Authorization:`Bearer ${token}`}});
+    if(!res.ok) throw new Error();
+    const m = await res.json();
+    const statusColor = m.kyc_status==='approved'?'var(--green)':m.kyc_status==='rejected'?'var(--red)':'#e8c43c';
+    const statusLabel = m.kyc_status==='approved'?'✅ Approuvé':m.kyc_status==='rejected'?'❌ Rejeté':'⏳ En attente';
+    content.innerHTML = `
+      <div style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <div>
+          <strong style="font-size:1rem">${m.full_name||'—'}</strong>
+          <div style="font-size:.8rem;color:var(--text2);margin-top:2px">📞 ${m.phone} &nbsp;|&nbsp; 🎂 ${m.birth_date||'—'}</div>
+        </div>
+        <span style="font-size:.78rem;padding:4px 12px;border-radius:50px;background:rgba(0,0,0,.3);color:${statusColor};border:1px solid ${statusColor}">${statusLabel}</span>
+      </div>
+      <div class="kyc-imgs">
+        ${m.kyc_front_url?`<div>
+          <p style="font-size:.76rem;color:var(--text2);margin-bottom:6px">🪪 CNI Recto</p>
+          <div class="kyc-img-box" onclick="openLightbox('${m.kyc_front_url}')">
+            <img src="${m.kyc_front_url}" onerror="this.parentNode.innerHTML='📄'" loading="lazy">
+          </div>
+        </div>`:''}
+        ${m.kyc_back_url?`<div>
+          <p style="font-size:.76rem;color:var(--text2);margin-bottom:6px">🪪 CNI Verso</p>
+          <div class="kyc-img-box" onclick="openLightbox('${m.kyc_back_url}')">
+            <img src="${m.kyc_back_url}" onerror="this.parentNode.innerHTML='📄'" loading="lazy">
+          </div>
+        </div>`:''}
+        ${m.kyc_selfie_url?`<div>
+          <p style="font-size:.76rem;color:var(--text2);margin-bottom:6px">🤳 Selfie avec CNI</p>
+          <div class="kyc-img-box" onclick="openLightbox('${m.kyc_selfie_url}')">
+            <img src="${m.kyc_selfie_url}" onerror="this.parentNode.innerHTML='🤳'" loading="lazy">
+          </div>
+        </div>`:''}
+      </div>
+      <div class="kyc-status-bar">
+        <button class="btn btn-success" style="flex:1;justify-content:center;border-radius:10px" onclick="updateKycStatus('${merchantId}','approved')">✅ Approuver</button>
+        <button class="btn btn-danger" style="flex:1;justify-content:center;border-radius:10px" onclick="updateKycStatus('${merchantId}','rejected')">❌ Rejeter</button>
+      </div>`;
+  } catch(e){
+    content.innerHTML='<div style="color:var(--red);text-align:center;padding:30px">Erreur chargement documents</div>';
+  }
+}
+
+async function updateKycStatus(merchantId, status){
+  try {
+    const res = await fetch(`${API}/admin/merchants/${merchantId}/kyc-status`, {
+      method:'PATCH',
+      headers:{'Content-Type':'application/json', Authorization:`Bearer ${token}`},
+      body: JSON.stringify({kyc_status: status})
+    });
+    if(res.ok){
+      toast(status==='approved'?'KYC approuvé ✅':'KYC rejeté ❌', status==='approved'?'success':'error');
+      closeModal('kycModal');
+      loadMerchantsTable('');
+    } else {
+      const err = await res.json();
+      toast(err.detail||'Erreur', 'error');
+    }
+  } catch(e){ toast('Serveur inaccessible','error'); }
+}
+
+function openLightbox(url){
+  const lb = document.createElement('div');
+  lb.className = 'lightbox';
+  lb.innerHTML = `<img src="${url}">`;
+  lb.onclick = () => lb.remove();
+  document.body.appendChild(lb);
 }
 
 // ── SUSPEND / ACTIVATE ────────────────────────────────────────────────────────
