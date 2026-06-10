@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Marchand — Digital Fashion Store</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0a0f;--bg2:#111118;--bg3:#1a1a24;--surface:#1e1e2e;--border:#2a2a3e;--text:#f0eff8;--text2:#9896b0;--accent:#c9a96e;--gold:#d4af6e;--accent2:#e8c99a;--green:#4ecb7a;--red:#e85c5c;--rose:#e8879a;--blue:#5c9ae8;--purple:#a06ee8;--radius:14px;--shadow:0 8px 32px rgba(0,0,0,.4);--font-display:'Playfair Display',serif;--font-body:'DM Sans',sans-serif}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-height:100vh}
+
+/* AUTH */
+.auth-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--bg);padding:20px}
+.auth-box{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:40px;width:100%;max-width:480px}
+.auth-logo{font-family:var(--font-display);font-style:italic;font-size:1.6rem;background:linear-gradient(135deg,var(--gold),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-align:center;margin-bottom:6px}
+.auth-sub{text-align:center;color:var(--text2);font-size:.88rem;margin-bottom:24px}
+.auth-tabs{display:flex;background:var(--bg3);border-radius:12px;padding:4px;margin-bottom:24px}
+.auth-tab{flex:1;padding:10px;text-align:center;cursor:pointer;border-radius:8px;transition:all .2s;font-size:.9rem;background:none;border:none;color:var(--text2);font-family:var(--font-body)}
+.auth-tab.active{background:var(--purple);color:white;font-weight:600}
+
+/* FORMS */
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:.82rem;color:var(--text2);margin-bottom:5px;font-weight:500}
+.form-input,.form-select,.form-textarea{width:100%;padding:10px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:var(--font-body);font-size:.9rem;outline:none;transition:border-color .2s,box-shadow .2s}
+.form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--purple);box-shadow:0 0 0 3px rgba(160,110,232,.1)}
+.form-textarea{resize:vertical;min-height:80px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-err{color:var(--red);font-size:.8rem;margin-top:4px;display:none}
+.form-err.show{display:block}
+
+/* FILE UPLOAD */
+.file-upload-area{border:2px dashed var(--border);border-radius:12px;padding:20px;text-align:center;cursor:pointer;transition:all .2s;position:relative;background:var(--bg3)}
+.file-upload-area:hover{border-color:var(--purple);background:rgba(160,110,232,.04)}
+.file-upload-area input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer}
+.file-upload-area .upload-icon{font-size:1.8rem;margin-bottom:6px}
+.file-upload-area p{font-size:.82rem;color:var(--text2)}
+.file-preview{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.fp-item{position:relative;width:70px;height:70px;border-radius:8px;overflow:hidden;border:2px solid var(--border)}
+.fp-item img{width:100%;height:100%;object-fit:cover}
+.fp-remove{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.7);border:none;cursor:pointer;color:white;width:16px;height:16px;border-radius:50%;font-size:.55rem;display:flex;align-items:center;justify-content:center}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:10px 20px;border-radius:50px;font-family:var(--font-body);font-weight:600;font-size:.86rem;cursor:pointer;border:none;transition:all .2s;white-space:nowrap}
+.btn-primary{background:linear-gradient(135deg,var(--purple),#7b3af5);color:white}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(160,110,232,.3)}
+.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
+.btn-ghost:hover{border-color:var(--purple);color:var(--purple)}
+.btn-danger{background:rgba(232,92,92,.12);color:var(--red);border:1px solid rgba(232,92,92,.25)}
+.btn-danger:hover{background:rgba(232,92,92,.22)}
+.btn-success{background:rgba(78,203,122,.12);color:var(--green);border:1px solid rgba(78,203,122,.25)}
+.btn-sm{padding:6px 13px;font-size:.78rem}
+.btn-full{width:100%;justify-content:center;border-radius:12px;padding:12px}
+.btn-submit{width:100%;background:linear-gradient(135deg,var(--purple),#7b3af5);color:white;border:none;cursor:pointer;padding:13px;border-radius:12px;font-family:var(--font-body);font-weight:700;font-size:1rem;margin-top:8px;transition:all .2s}
+.btn-submit:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(160,110,232,.3)}
+
+/* APP LAYOUT */
+.layout{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+.sidebar{background:var(--bg2);border-right:1px solid var(--border);padding:24px 14px;display:flex;flex-direction:column;gap:4px;position:sticky;top:0;height:100vh;overflow-y:auto}
+.sidebar-logo{font-family:var(--font-display);font-style:italic;font-size:1.05rem;background:linear-gradient(135deg,var(--purple),#c99ae8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:18px;padding:0 8px}
+.sidebar-label{font-size:.65rem;letter-spacing:.12em;text-transform:uppercase;color:var(--text2);padding:10px 8px 4px;margin-top:6px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;cursor:pointer;font-size:.88rem;color:var(--text2);transition:all .2s;border:none;background:none;width:100%;text-align:left;font-family:var(--font-body)}
+.nav-item:hover{background:var(--bg3);color:var(--text)}
+.nav-item.active{background:rgba(160,110,232,.12);color:var(--purple);font-weight:500}
+.nav-item .icon{font-size:1rem;width:20px;text-align:center}
+.main{padding:28px 30px;overflow-x:hidden}
+.page{display:none}.page.active{display:block}
+.page-header{margin-bottom:22px;display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.page-header-left h1{font-family:var(--font-display);font-size:1.6rem}
+.page-header-left p{color:var(--text2);font-size:.88rem;margin-top:3px}
+
+/* STATS */
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;margin-bottom:22px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+.stat-card .si{font-size:1.5rem;margin-bottom:8px}
+.stat-card .sv{font-family:var(--font-display);font-size:1.8rem;color:var(--purple);font-weight:700}
+.stat-card .sl{font-size:.78rem;color:var(--text2);margin-top:2px}
+
+/* CARD */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px}
+
+/* TABLE */
+.table-wrap{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse}
+thead tr{background:var(--bg3)}
+th{padding:11px 14px;text-align:left;font-size:.74rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text2);white-space:nowrap}
+td{padding:12px 14px;font-size:.86rem;border-top:1px solid var(--border);vertical-align:middle}
+tr:hover td{background:rgba(255,255,255,.018)}
+.td-name{font-weight:500}
+.td-price{color:var(--purple);font-weight:600;font-family:var(--font-display)}
+.td-actions{display:flex;gap:6px;flex-wrap:wrap}
+.stock-ok{color:var(--green)}.stock-low{color:#e8c43c}.stock-zero{color:var(--red)}
+
+/* SEARCH BAR */
+.search-bar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.search-bar input{flex:1;min-width:180px;padding:9px 15px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:var(--font-body);font-size:.88rem;outline:none}
+.search-bar input:focus{border-color:var(--purple)}
+
+/* UPLOAD ZONE (produit) */
+.upload-zone{border:2px dashed var(--border);border-radius:var(--radius);padding:24px;text-align:center;cursor:pointer;transition:all .2s;position:relative}
+.upload-zone:hover{border-color:var(--purple);background:rgba(160,110,232,.03)}
+.upload-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer}
+.img-previews{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.img-preview{position:relative;width:72px;height:72px;border-radius:10px;overflow:hidden;border:2px solid var(--border)}
+.img-preview img{width:100%;height:100%;object-fit:cover}
+.remove-img{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.7);border:none;cursor:pointer;color:white;width:16px;height:16px;border-radius:50%;font-size:.55rem;display:flex;align-items:center;justify-content:center}
+
+/* COMMENTS */
+.comment-item{background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:13px;margin-bottom:9px}
+.comment-meta{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+.comment-author{font-weight:600;font-size:.85rem}
+.comment-product{font-size:.74rem;color:var(--purple);background:rgba(160,110,232,.1);padding:2px 8px;border-radius:50px}
+.comment-text{font-size:.88rem;line-height:1.55;color:var(--text2)}
+.comment-date{font-size:.72rem;color:var(--text2);margin-left:auto}
+.comment-replies{margin-top:8px;padding-left:12px;border-left:2px solid var(--border);display:flex;flex-direction:column;gap:6px}
+.reply-item{background:var(--surface);border-radius:8px;padding:9px 12px}
+
+/* CHAT */
+.chat-layout{display:grid;grid-template-columns:260px 1fr;gap:16px;min-height:500px}
+.chat-list-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;flex-direction:column;overflow:hidden}
+.chat-list-scroll{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.chat-conv-item{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer;display:flex;align-items:center;gap:10px;transition:all .2s}
+.chat-conv-item:hover,.chat-conv-item.active{border-color:var(--purple);background:rgba(160,110,232,.07)}
+.chat-main-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;flex-direction:column}
+.chat-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:.9rem;text-align:center}
+.chat-active-area{display:none;flex-direction:column;flex:1}
+.chat-active-area.visible{display:flex}
+.chat-messages-wrap{flex:1;background:var(--bg3);border-radius:12px;padding:12px;overflow-y:auto;min-height:280px;display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.msg-bubble{max-width:78%;padding:9px 13px;border-radius:13px;font-size:.83rem;line-height:1.5;word-break:break-word}
+.msg-merchant{background:linear-gradient(135deg,var(--purple),#7b3af5);color:white;align-self:flex-end;border-bottom-right-radius:3px}
+.msg-admin{background:var(--surface);color:var(--text);align-self:flex-start;border-bottom-left-radius:3px;border:1px solid var(--border)}
+.msg-time{font-size:.65rem;opacity:.65;margin-top:3px;text-align:right}
+.chat-input-row{display:flex;gap:8px}
+.chat-input-row input{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:9px 15px;color:var(--text);font-family:var(--font-body);font-size:.86rem;outline:none}
+.chat-input-row input:focus{border-color:var(--purple)}
+.chat-send-btn{background:var(--purple);border:none;cursor:pointer;padding:9px 16px;border-radius:20px;color:white;font-weight:700;font-size:.82rem}
+
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.78);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:20px;opacity:0;pointer-events:none;transition:opacity .25s}
+.modal-overlay.open{opacity:1;pointer-events:all}
+.modal-box{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:28px;width:100%;max-width:520px;transform:scale(.95);transition:transform .25s;max-height:90vh;overflow-y:auto}
+.modal-overlay.open .modal-box{transform:scale(1)}
+.modal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.modal-header h3{font-family:var(--font-display);font-size:1.2rem}
+.btn-close{background:var(--bg3);border:none;cursor:pointer;color:var(--text2);width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.82rem}
+.btn-close:hover{background:var(--red);color:white}
+
+/* TOAST */
+.toast-container{position:fixed;bottom:22px;right:22px;z-index:9999;display:flex;flex-direction:column;gap:8px}
+.toast{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 17px;display:flex;align-items:center;gap:9px;box-shadow:var(--shadow);animation:slideIn .3s ease;min-width:250px;font-size:.86rem}
+.toast.success{border-left:3px solid var(--green)}.toast.error{border-left:3px solid var(--red)}.toast.info{border-left:3px solid var(--purple)}
+@keyframes slideIn{from{transform:translateX(110%);opacity:0}to{transform:translateX(0);opacity:1}}
+
+/* SUSPENDED */
+.susp-banner{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.95);backdrop-filter:blur(12px);align-items:center;justify-content:center;padding:24px}
+.susp-box{background:var(--surface);border:2px solid var(--red);border-radius:24px;padding:40px;max-width:480px;text-align:center}
+
+/* SPINNER */
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(160,110,232,.3);border-top-color:var(--purple);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+@media(max-width:900px){
+  .layout{grid-template-columns:1fr}
+  .sidebar{display:none}.main{padding:16px}
+  .chat-layout{grid-template-columns:1fr}
+  .form-row{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- SUSPENDED -->
+<div class="susp-banner" id="suspBanner">
+  <div class="susp-box">
+    <div style="font-size:3rem;margin-bottom:16px">🚫</div>
+    <h2 style="font-family:var(--font-display);color:var(--red);margin-bottom:12px">Compte suspendu</h2>
+    <p style="color:var(--text2);font-size:.92rem;line-height:1.7">Votre compte marchand a été suspendu par les administrateurs.<br><br>
+    Veuillez utiliser le compte d'un proche pour demander à l'admin de réactiver votre compte en lui envoyant votre numéro de compte.</p>
+  </div>
+</div>
+
+<!-- AUTH -->
+<div id="authWrap" class="auth-wrap">
+  <div class="auth-box">
+    <div class="auth-logo">✦ Espace Marchand</div>
+    <p class="auth-sub">Digital Fashion Store</p>
+    <div class="auth-tabs">
+      <button class="auth-tab active" onclick="switchAuthTab('login')">Connexion</button>
+      <button class="auth-tab" onclick="switchAuthTab('register')">Créer un compte</button>
+    </div>
+
+    <!-- LOGIN -->
+    <div id="authLoginForm">
+      <div class="form-group"><label>Téléphone</label><input type="tel" class="form-input" id="loginPhone" placeholder="77 XXX XX XX"></div>
+      <div class="form-group"><label>Mot de passe</label><input type="password" class="form-input" id="loginPassword"></div>
+      <div class="form-err show" id="loginErr" style="display:none"></div>
+      <button class="btn-submit" onclick="doLogin()">Se connecter</button>
+      <p style="font-size:.76rem;color:var(--text2);text-align:center;margin-top:12px">
+        Code temporaire oublié ? Appelez : <strong style="color:var(--purple)">0574282928</strong>
+      </p>
+    </div>
+
+    <!-- REGISTER -->
+    <div id="authRegisterForm" style="display:none">
+      <p style="font-size:.8rem;color:var(--text2);background:rgba(160,110,232,.08);border-radius:8px;padding:10px 12px;margin-bottom:16px;line-height:1.6">
+        📋 Pour créer un compte marchand, vous devez fournir votre identité complète et un scan de votre carte d'identité (recto, verso + selfie). Ces documents sont transmis à l'administrateur pour vérification.
+      </p>
+      <div class="form-group"><label>Nom complet *</label><input type="text" class="form-input" id="regName" placeholder="Prénom et Nom"></div>
+      <div class="form-row">
+        <div class="form-group"><label>Téléphone *</label><input type="tel" class="form-input" id="regPhone" placeholder="77 XXX XX XX"></div>
+        <div class="form-group"><label>Date de naissance *</label><input type="date" class="form-input" id="regBirth"></div>
+      </div>
+      <div class="form-group"><label>Mot de passe *</label><input type="password" class="form-input" id="regPassword" placeholder="Min. 6 caractères"></div>
+      <div class="form-group">
+        <label>📷 Photo CNI Recto *</label>
+        <div class="file-upload-area" id="frontArea">
+          <input type="file" id="kycFront" accept="image/*" onchange="previewKYC(this,'frontPreview','frontArea')">
+          <div class="upload-icon">🪪</div>
+          <p>Cliquez pour sélectionner (recto)</p>
+        </div>
+        <div class="file-preview" id="frontPreview"></div>
+      </div>
+      <div class="form-group">
+        <label>📷 Photo CNI Verso *</label>
+        <div class="file-upload-area" id="backArea">
+          <input type="file" id="kycBack" accept="image/*" onchange="previewKYC(this,'backPreview','backArea')">
+          <div class="upload-icon">🪪</div>
+          <p>Cliquez pour sélectionner (verso)</p>
+        </div>
+        <div class="file-preview" id="backPreview"></div>
+      </div>
+      <div class="form-group">
+        <label>🤳 Selfie avec CNI *</label>
+        <div class="file-upload-area" id="selfieArea">
+          <input type="file" id="kycSelfie" accept="image/*" onchange="previewKYC(this,'selfiePreview','selfieArea')">
+          <div class="upload-icon">🤳</div>
+          <p>Selfie tenant votre CNI</p>
+        </div>
+        <div class="file-preview" id="selfiePreview"></div>
+      </div>
+      <div class="form-err" id="registerErr" style="display:none;margin-bottom:10px"></div>
+      <button class="btn-submit" id="regBtn" onclick="doRegister()">Créer mon compte marchand</button>
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="appWrap" style="display:none">
+<div class="layout">
+<aside class="sidebar">
+  <div class="sidebar-logo">🏪 Espace Marchand</div>
+  <div class="sidebar-label">Principal</div>
+  <button class="nav-item active" onclick="showPage('dashboard',this)"><span class="icon">📊</span> Tableau de bord</button>
+  <button class="nav-item" onclick="showPage('addProduct',this)"><span class="icon">➕</span> Ajouter un produit</button>
+  <button class="nav-item" onclick="showPage('myProducts',this)"><span class="icon">🛍️</span> Mes produits</button>
+  <div class="sidebar-label">Engagement</div>
+  <button class="nav-item" onclick="showPage('comments',this)"><span class="icon">💬</span> Commentaires</button>
+  <div class="sidebar-label">Support</div>
+  <button class="nav-item" onclick="showPage('chat',this)"><span class="icon">📩</span> Assistance Admin</button>
+  <div class="sidebar-label">Compte</div>
+  <button class="nav-item" onclick="doLogout()"><span class="icon">🚪</span> Déconnexion</button>
+  <div style="margin-top:auto;padding:10px 8px;font-size:.73rem;color:var(--text2)">
+    <a href="index.html" style="color:var(--purple);text-decoration:none">← Voir la boutique</a>
+  </div>
+</aside>
+
+<main class="main">
+
+  <!-- DASHBOARD -->
+  <div id="page-dashboard" class="page active">
+    <div class="page-header"><div class="page-header-left"><h1>Tableau de bord</h1><p>Bienvenue, <span id="merchantNameDisplay">—</span></p></div></div>
+    <div class="stat-grid">
+      <div class="stat-card"><div class="si">🛍️</div><div class="sv" id="statMyProds">—</div><div class="sl">Mes produits</div></div>
+      <div class="stat-card"><div class="si">❤️</div><div class="sv" id="statMyLikes">—</div><div class="sl">Total Likes</div></div>
+      <div class="stat-card"><div class="si">👁️</div><div class="sv" id="statMyViews">—</div><div class="sl">Total Vues</div></div>
+    </div>
+    <div class="card">
+      <h3 style="font-family:var(--font-display);margin-bottom:14px">Mes produits récents</h3>
+      <div id="recentProdsTable"></div>
+    </div>
+  </div>
+
+  <!-- AJOUTER PRODUIT -->
+  <div id="page-addProduct" class="page">
+    <div class="page-header"><div class="page-header-left"><h1>Ajouter un produit</h1><p>Publiez un nouveau produit dans la boutique</p></div></div>
+    <div style="display:grid;grid-template-columns:1fr 340px;gap:20px">
+      <div class="card">
+        <h3 style="font-family:var(--font-display);margin-bottom:16px">Informations</h3>
+        <div class="form-group"><label>Nom du produit *</label><input type="text" class="form-input" id="pName" placeholder="Nom du produit"></div>
+        <div class="form-group"><label>Description</label><textarea class="form-textarea" id="pDesc" placeholder="Description détaillée…"></textarea></div>
+        <div class="form-row">
+          <div class="form-group"><label>Prix (FCFA) *</label><input type="number" class="form-input" id="pPrice" min="0"></div>
+          <div class="form-group"><label>Stock *</label><input type="number" class="form-input" id="pStock" min="0" value="0"></div>
+        </div>
+        <div class="form-group"><label>Catégorie</label><select class="form-select" id="pCategory"><option value="">— Choisir —</option></select></div>
+        <div class="form-group"><label>Lien Wave de paiement</label><input type="url" class="form-input" id="pWave" placeholder="https://pay.wave.com/m/…"></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="card">
+          <h3 style="font-family:var(--font-display);margin-bottom:12px">Photos</h3>
+          <div class="upload-zone">
+            <input type="file" id="pImages" accept="image/*" multiple onchange="previewProdImages(this)">
+            <div style="font-size:1.6rem;margin-bottom:6px">📸</div>
+            <p style="font-size:.82rem"><strong>Cliquez ou glissez</strong> vos photos</p>
+          </div>
+          <div class="img-previews" id="imgPreviews"></div>
+        </div>
+        <div class="card">
+          <div id="addProductErr" style="background:rgba(232,92,92,.1);border:1px solid rgba(232,92,92,.3);color:var(--red);border-radius:8px;padding:9px 13px;font-size:.83rem;margin-bottom:12px;display:none"></div>
+          <button class="btn btn-primary btn-full" id="submitBtn" onclick="submitProduct()">
+            <span id="submitBtnText">✅ Publier le produit</span>
+          </button>
+          <button class="btn btn-ghost btn-full" style="margin-top:8px;border-radius:12px" onclick="resetProductForm()">Réinitialiser</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MES PRODUITS -->
+  <div id="page-myProducts" class="page">
+    <div class="page-header">
+      <div class="page-header-left"><h1>Mes produits</h1><p>Gérez vos produits publiés</p></div>
+      <button class="btn btn-primary" onclick="showPage('addProduct',null)">➕ Ajouter</button>
+    </div>
+    <div class="search-bar">
+      <input type="text" id="prodSearch" placeholder="Nom ou ID du produit…" onkeydown="if(event.key==='Enter')searchMyProducts()">
+      <button class="btn btn-ghost" onclick="searchMyProducts()">🔍</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('prodSearch').value='';loadMyProducts()">✕ Tout</button>
+    </div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Produit</th><th>Prix</th><th>Stock</th><th>👁️ Vues</th><th>❤️ Likes</th><th>Wave</th><th>Actions</th></tr></thead>
+      <tbody id="myProductsTableBody"><tr><td colspan="7" style="text-align:center;color:var(--text2);padding:30px">Chargement…</td></tr></tbody></table>
+    </div>
+  </div>
+
+  <!-- COMMENTAIRES -->
+  <div id="page-comments" class="page">
+    <div class="page-header"><div class="page-header-left"><h1>Commentaires</h1><p>Commentaires sur vos produits</p></div></div>
+    <div id="commentsContainer"><div style="color:var(--text2);text-align:center;padding:40px">Chargement…</div></div>
+  </div>
+
+  <!-- CHAT ADMIN -->
+  <div id="page-chat" class="page">
+    <div class="page-header"><div class="page-header-left"><h1>Assistance Admin</h1><p>Échangez directement avec l'administrateur</p></div></div>
+    <div class="chat-layout">
+      <div class="chat-list-card">
+        <h4 style="font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text2)">Conversation</h4>
+        <div class="chat-list-scroll">
+          <div class="chat-conv-item active" onclick="openAdminChat()">
+            <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--accent2));display:flex;align-items:center;justify-content:center;font-weight:700;color:#0a0a0f;font-size:.8rem;flex-shrink:0">A</div>
+            <div>
+              <strong style="font-size:.86rem">Administrateur</strong>
+              <div style="font-size:.74rem;color:var(--text2)">Support Digital Fashion</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="chat-main-card">
+        <div class="chat-empty" id="chatEmptyState">Chargement de la conversation…</div>
+        <div class="chat-active-area" id="chatArea">
+          <div style="padding:10px 14px;background:var(--bg3);border-radius:10px;margin-bottom:10px;display:flex;align-items:center;gap:10px">
+            <div style="width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--accent2));display:flex;align-items:center;justify-content:center;font-weight:700;color:#0a0a0f;font-size:.78rem">A</div>
+            <div><strong style="font-size:.88rem">Administrateur</strong><div style="font-size:.74rem;color:var(--green)">● Support Digital Fashion</div></div>
+          </div>
+          <div class="chat-messages-wrap" id="chatMessages"></div>
+          <div class="chat-input-row">
+            <input type="text" id="chatInput" placeholder="Votre message à l'admin…" onkeydown="if(event.key==='Enter')sendMsg()">
+            <button class="chat-send-btn" onclick="sendMsg()">Envoyer ➤</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+</div>
+</div>
+
+<!-- MODAL EDIT PRODUIT -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal-box">
+    <div class="modal-header"><h3>✏️ Modifier le produit</h3><button class="btn-close" onclick="closeModal('editModal')">✕</button></div>
+    <input type="hidden" id="editId">
+    <div class="form-group"><label>Nom</label><input type="text" class="form-input" id="editName"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Prix (FCFA)</label><input type="number" class="form-input" id="editPrice"></div>
+      <div class="form-group"><label>Stock</label><input type="number" class="form-input" id="editStock"></div>
+    </div>
+    <div class="form-group"><label>Lien Wave</label><input type="url" class="form-input" id="editWave"></div>
+    <div style="display:flex;gap:10px;margin-top:6px">
+      <button class="btn btn-primary" style="flex:1;justify-content:center;border-radius:12px" onclick="saveEdit()">💾 Enregistrer</button>
+      <button class="btn btn-ghost" style="border-radius:12px" onclick="closeModal('editModal')">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL DELETE -->
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal-box">
+    <div class="modal-header"><h3>🗑️ Supprimer le produit</h3><button class="btn-close" onclick="closeModal('deleteModal')">✕</button></div>
+    <p style="color:var(--text2);margin-bottom:14px;font-size:.88rem">Action irréversible. Entrez le code de suppression.</p>
+    <input type="hidden" id="deleteProductId">
+    <div class="form-group"><label>Code de suppression</label><input type="password" class="form-input" id="deleteCode" placeholder="Code secret"></div>
+    <div id="deleteErr" style="color:var(--red);font-size:.8rem;margin-bottom:10px;display:none"></div>
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-danger" style="flex:1;justify-content:center;border-radius:12px" onclick="confirmDelete()">🗑️ Supprimer</button>
+      <button class="btn btn-ghost" style="border-radius:12px" onclick="closeModal('deleteModal')">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL RÉPONDRE COMMENTAIRE -->
+<div class="modal-overlay" id="replyModal">
+  <div class="modal-box">
+    <div class="modal-header"><h3>💬 Répondre</h3><button class="btn-close" onclick="closeModal('replyModal')">✕</button></div>
+    <input type="hidden" id="replyProductId">
+    <input type="hidden" id="replyParentId">
+    <div id="replyOriginal" style="background:var(--bg3);border-radius:10px;padding:12px;margin-bottom:14px;font-size:.86rem;color:var(--text2)"></div>
+    <div class="form-group"><label>Votre réponse</label><textarea class="form-textarea" id="replyText" placeholder="Répondre au client…"></textarea></div>
+    <button class="btn btn-primary btn-full" onclick="submitReply()">Envoyer la réponse</button>
+  </div>
+</div>
+
+<div class="toast-container" id="toasts"></div>
+
+<script>
+const API = 'https://web-production-94add.up.railway.app/api';
+const WS_URL = 'wss://web-production-94add.up.railway.app/ws';
+
+let token = localStorage.getItem('dfs_merchant_token');
+let merchantUser = JSON.parse(localStorage.getItem('dfs_merchant_user')||'null');
+let ws = null;
+let selectedFiles = [];
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', ()=>{
+  if(token && merchantUser) showApp();
+});
+
+function showApp(){
+  document.getElementById('authWrap').style.display='none';
+  document.getElementById('appWrap').style.display='block';
+  document.getElementById('merchantNameDisplay').textContent=merchantUser.full_name||merchantUser.phone;
+  loadCategories();
+  loadDashboard();
+  connectWS();
+  openAdminChat();
+}
+
+// ── AUTH ─────────────────────────────────────────────────────────────────────
+function switchAuthTab(t){
+  document.getElementById('authLoginForm').style.display=t==='login'?'block':'none';
+  document.getElementById('authRegisterForm').style.display=t==='register'?'block':'none';
+  document.querySelectorAll('.auth-tab').forEach((el,i)=>el.classList.toggle('active',(t==='login'&&i===0)||(t==='register'&&i===1)));
+}
+
+function previewKYC(input, previewId, areaId){
+  const file=input.files[0];
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    document.getElementById(previewId).innerHTML=`<div class="fp-item"><img src="${e.target.result}"></div>`;
+    document.getElementById(areaId).querySelector('p').textContent='✅ Fichier sélectionné';
+  };
+  reader.readAsDataURL(file);
+}
+
+async function doLogin(){
+  const phone=document.getElementById('loginPhone').value.trim();
+  const password=document.getElementById('loginPassword').value;
+  const errEl=document.getElementById('loginErr'); errEl.style.display='none';
+  if(!phone||!password){errEl.textContent='Remplissez tous les champs';errEl.style.display='block';return;}
+  try{
+    const res=await fetch(`${API}/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,password})});
+    const data=await res.json();
+    if(res.ok){
+      if(data.user.role!=='merchant'){errEl.textContent='Ce compte n\'est pas un compte marchand';errEl.style.display='block';return;}
+      token=data.access_token; merchantUser=data.user;
+      localStorage.setItem('dfs_merchant_token',token);
+      localStorage.setItem('dfs_merchant_user',JSON.stringify(merchantUser));
+      showApp(); toast('Bienvenue 👋','success');
+    } else {
+      if(data.detail==='ACCOUNT_SUSPENDED'){
+        document.getElementById('suspBanner').style.display='flex';
+        return;
+      }
+      errEl.textContent=data.detail||'Identifiants invalides';errEl.style.display='block';
+    }
+  }catch(e){errEl.textContent='Serveur inaccessible';errEl.style.display='block';}
+}
+
+async function doRegister(){
+  const full_name=document.getElementById('regName').value.trim();
+  const phone=document.getElementById('regPhone').value.trim();
+  const birth_date=document.getElementById('regBirth').value;
+  const password=document.getElementById('regPassword').value;
+  const frontFile=document.getElementById('kycFront').files[0];
+  const backFile=document.getElementById('kycBack').files[0];
+  const selfieFile=document.getElementById('kycSelfie').files[0];
+  const errEl=document.getElementById('registerErr'); errEl.style.display='none';
+
+  if(!full_name||!phone||!birth_date||!password){errEl.textContent='Tous les champs personnels sont obligatoires';errEl.style.display='block';return;}
+  if(password.length<6){errEl.textContent='Mot de passe trop court (6 car. min)';errEl.style.display='block';return;}
+  if(!frontFile){errEl.textContent='La photo recto de votre CNI est requise';errEl.style.display='block';return;}
+  if(!backFile){errEl.textContent='La photo verso de votre CNI est requise';errEl.style.display='block';return;}
+  if(!selfieFile){errEl.textContent='Le selfie avec votre CNI est requis';errEl.style.display='block';return;}
+
+  const btn=document.getElementById('regBtn');
+  btn.disabled=true; btn.textContent='Création en cours…';
+
+  try{
+    const fd=new FormData();
+    fd.append('phone',phone);
+    fd.append('password',password);
+    fd.append('full_name',full_name);
+    fd.append('birth_date',birth_date);
+    fd.append('id_front',frontFile);
+    fd.append('id_back',backFile);
+    fd.append('selfie',selfieFile);
+
+    const res=await fetch(`${API}/auth/register-merchant`,{method:'POST',body:fd});
+    const data=await res.json();
+    if(res.ok){
+      token=data.access_token; merchantUser=data.user;
+      localStorage.setItem('dfs_merchant_token',token);
+      localStorage.setItem('dfs_merchant_user',JSON.stringify(merchantUser));
+      showApp(); toast('Compte marchand créé ! Documents envoyés à l\'admin. 🎉','success');
+    } else {errEl.textContent=data.detail||'Erreur inscription';errEl.style.display='block';}
+  }catch(e){errEl.textContent='Serveur inaccessible';errEl.style.display='block';}
+  finally{btn.disabled=false;btn.textContent='Créer mon compte marchand';}
+}
+
+function doLogout(){
+  localStorage.removeItem('dfs_merchant_token');
+  localStorage.removeItem('dfs_merchant_user');
+  token=null; merchantUser=null;
+  document.getElementById('authWrap').style.display='flex';
+  document.getElementById('appWrap').style.display='none';
+  if(ws) ws.close();
+}
+
+// ── NAVIGATION ────────────────────────────────────────────────────────────────
+function showPage(name,btn){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  const pg=document.getElementById(`page-${name}`);
+  if(pg) pg.classList.add('active');
+  if(btn) btn.classList.add('active');
+  const loaders={
+    dashboard: loadDashboard,
+    myProducts: loadMyProducts,
+    comments: loadComments,
+    chat: ()=>{ openAdminChat(); }
+  };
+  if(loaders[name]) loaders[name]();
+}
+
+// ── WS ────────────────────────────────────────────────────────────────────────
+function connectWS(){
+  try{
+    ws=new WebSocket(`${WS_URL}?token=${token}`);
+    ws.onopen=()=>{};
+    ws.onmessage=e=>{try{handleWSMsg(JSON.parse(e.data));}catch{}};
+    ws.onclose=()=>setTimeout(connectWS,5000);
+    ws.onerror=()=>{};
+  }catch(e){}
+}
+
+function handleWSMsg(msg){
+  if(msg.event==='account_suspended'){
+    doLogout();
+    document.getElementById('suspBanner').style.display='flex';
+    return;
+  }
+  if(msg.event==='new_message'&&msg.data.is_from_admin){
+    appendMsg(msg.data.message,true,msg.data.created_at);
+    toast(`💬 Admin : ${msg.data.message.substring(0,40)}…`,'info');
+  }
+  if(msg.event==='new_comment'){
+    toast(`💬 Nouveau commentaire : ${msg.data.message.substring(0,40)}…`,'info');
+    if(document.getElementById('page-comments').classList.contains('active')) loadComments();
+  }
+  if(msg.event==='product_stats_updated'){
+    // Mettre à jour les stats dans le tableau
+    loadMerchantStats();
+  }
+}
+
+// ── CATÉGORIES ────────────────────────────────────────────────────────────────
+async function loadCategories(){
+  try{
+    const res=await fetch(`${API}/categories`);
+    const cats=await res.json();
+    const sel=document.getElementById('pCategory');
+    sel.innerHTML='<option value="">— Choisir —</option>';
+    cats.forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=`${c.icon} ${c.name}`;sel.appendChild(o);});
+  }catch(e){}
+}
+
+// ── DASHBOARD ─────────────────────────────────────────────────────────────────
+async function loadDashboard(){
+  await loadMerchantStats();
+  await loadRecentProds();
+}
+
+async function loadMerchantStats(){
+  try{
+    const res=await fetch(`${API}/merchant/stats`,{headers:{Authorization:`Bearer ${token}`}});
+    if(res.ok){
+      const s=await res.json();
+      document.getElementById('statMyProds').textContent=s.products;
+      document.getElementById('statMyLikes').textContent=s.total_likes;
+      document.getElementById('statMyViews').textContent=s.total_views;
+    }
+  }catch(e){}
+}
+
+async function loadRecentProds(){
+  try{
+    const res=await fetch(`${API}/merchant/products`,{headers:{Authorization:`Bearer ${token}`}});
+    if(res.ok){
+      const products=(await res.json()).slice(0,5);
+      const c=document.getElementById('recentProdsTable');
+      if(!products.length){c.innerHTML='<p style="color:var(--text2);padding:16px">Aucun produit publié.</p>';return;}
+      c.innerHTML=`<div class="table-wrap"><table>
+        <thead><tr><th>Nom</th><th>Prix</th><th>Stock</th><th>👁️ Vues</th><th>❤️ Likes</th></tr></thead>
+        <tbody>${products.map(p=>`<tr>
+          <td class="td-name">${p.name}</td>
+          <td class="td-price">${formatPrice(p.price)} FCFA</td>
+          <td class="${p.stock===0?'stock-zero':p.stock<5?'stock-low':'stock-ok'}">${p.stock}</td>
+          <td>${p.views||0}</td><td>${p.likes||0}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`;
+    }
+  }catch(e){}
+}
+
+// ── IMAGES PRODUIT ────────────────────────────────────────────────────────────
+function previewProdImages(input){
+  Array.from(input.files).forEach(file=>{
+    selectedFiles.push(file);
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const idx=selectedFiles.length-1;
+      const wrap=document.createElement('div');wrap.className='img-preview';
+      wrap.innerHTML=`<img src="${e.target.result}"><button class="remove-img" onclick="removeImg(${idx},this.parentNode)">✕</button>`;
+      document.getElementById('imgPreviews').appendChild(wrap);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+function removeImg(idx,el){selectedFiles.splice(idx,1);el.remove();}
+
+// ── AJOUTER PRODUIT ───────────────────────────────────────────────────────────
+async function submitProduct(){
+  const name=document.getElementById('pName').value.trim();
+  const price=parseFloat(document.getElementById('pPrice').value);
+  const stock=parseInt(document.getElementById('pStock').value);
+  const desc=document.getElementById('pDesc').value.trim();
+  const category_id=document.getElementById('pCategory').value;
+  const wave_link=document.getElementById('pWave').value.trim();
+  const errEl=document.getElementById('addProductErr'); errEl.style.display='none';
+  if(!name){showAddErr('Le nom est obligatoire.');return;}
+  if(!price||price<=0){showAddErr('Prix invalide.');return;}
+  const btn=document.getElementById('submitBtn');const txt=document.getElementById('submitBtnText');
+  btn.disabled=true;txt.innerHTML='<span class="spinner"></span> Publication…';
+  try{
+    const res=await fetch(`${API}/products`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({name,description:desc,price,stock:isNaN(stock)?0:stock,category_id:category_id?parseInt(category_id):null,wave_link:wave_link||null})});
+    if(res.status===401){toast('Session expirée','error');doLogout();return;}
+    if(!res.ok){const err=await res.json();showAddErr(err.detail||`Erreur ${res.status}`);return;}
+    const product=await res.json();
+    if(selectedFiles.length>0){
+      txt.innerHTML='<span class="spinner"></span> Photos…';
+      const fd=new FormData();
+      selectedFiles.forEach(f=>fd.append('files',f));
+      await fetch(`${API}/products/${product.id}/images`,{method:'POST',headers:{Authorization:`Bearer ${token}`},body:fd});
+    }
+    toast(`"${name}" publié 🎉`,'success');
+    resetProductForm();
+    showPage('myProducts',null);
+  }catch(e){showAddErr('Serveur inaccessible.');}
+  finally{btn.disabled=false;txt.textContent='✅ Publier le produit';}
+}
+function showAddErr(msg){const el=document.getElementById('addProductErr');el.textContent=msg;el.style.display='block';}
+function resetProductForm(){
+  ['pName','pDesc','pPrice','pStock','pWave'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('pCategory').selectedIndex=0;
+  document.getElementById('pImages').value='';
+  document.getElementById('imgPreviews').innerHTML='';
+  document.getElementById('addProductErr').style.display='none';
+  selectedFiles=[];
+}
+
+// ── MES PRODUITS ──────────────────────────────────────────────────────────────
+async function loadMyProducts(search=''){
+  const tbody=document.getElementById('myProductsTableBody');
+  tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--text2);padding:28px">Chargement…</td></tr>';
+  try{
+    let url=`${API}/merchant/products`;
+    if(search) url+=`?search=${encodeURIComponent(search)}`;
+    const res=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
+    const products=await res.json();
+    if(!products.length){tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--text2);padding:28px">Aucun produit publié.</td></tr>';return;}
+    tbody.innerHTML=products.map(p=>`
+      <tr>
+        <td class="td-name">${p.name}<br><small style="color:var(--text2);font-size:.72rem">${p.id.slice(0,8)}…</small></td>
+        <td class="td-price">${formatPrice(p.price)} FCFA</td>
+        <td class="${p.stock===0?'stock-zero':p.stock<5?'stock-low':'stock-ok'}">${p.stock}</td>
+        <td>${p.views||0}</td>
+        <td>${p.likes||0}</td>
+        <td style="font-size:.76rem">${p.wave_link?`<a href="${p.wave_link}" target="_blank" style="color:var(--purple)">🔗 Voir</a>`:'—'}</td>
+        <td class="td-actions">
+          <button class="btn btn-ghost btn-sm" onclick='openEditModal(${JSON.stringify(p)})'>✏️</button>
+          <button class="btn btn-danger btn-sm" onclick="openDeleteModal('${p.id}')">🗑️</button>
+        </td>
+      </tr>`).join('');
+  }catch(e){tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--red);padding:28px">Erreur connexion</td></tr>';}
+}
+
+function searchMyProducts(){loadMyProducts(document.getElementById('prodSearch').value.trim());}
+
+// ── EDIT / DELETE ─────────────────────────────────────────────────────────────
+function openEditModal(product){
+  document.getElementById('editId').value=product.id;
+  document.getElementById('editName').value=product.name;
+  document.getElementById('editPrice').value=product.price;
+  document.getElementById('editStock').value=product.stock;
+  document.getElementById('editWave').value=product.wave_link||'';
+  document.getElementById('editModal').classList.add('open');
+}
+
+async function saveEdit(){
+  const id=document.getElementById('editId').value;
+  const body={name:document.getElementById('editName').value,price:parseFloat(document.getElementById('editPrice').value),stock:parseInt(document.getElementById('editStock').value),wave_link:document.getElementById('editWave').value||null};
+  try{
+    const res=await fetch(`${API}/products/${id}`,{method:'PUT',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify(body)});
+    if(res.ok){closeModal('editModal');toast('Produit mis à jour !','success');loadMyProducts();}
+    else{const err=await res.json();toast(err.detail||'Erreur','error');}
+  }catch(e){toast('Serveur inaccessible','error');}
+}
+
+function openDeleteModal(productId){
+  document.getElementById('deleteProductId').value=productId;
+  document.getElementById('deleteCode').value='';
+  document.getElementById('deleteErr').style.display='none';
+  document.getElementById('deleteModal').classList.add('open');
+}
+
+async function confirmDelete(){
+  const id=document.getElementById('deleteProductId').value;
+  const code=document.getElementById('deleteCode').value;
+  const errEl=document.getElementById('deleteErr'); errEl.style.display='none';
+  if(!code){errEl.textContent='Entrez le code';errEl.style.display='block';return;}
+  try{
+    const res=await fetch(`${API}/products/${id}`,{method:'DELETE',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({delete_code:code})});
+    if(res.ok){closeModal('deleteModal');toast('Produit supprimé','info');loadMyProducts();}
+    else{const err=await res.json();errEl.textContent=err.detail||'Code incorrect';errEl.style.display='block';}
+  }catch(e){errEl.textContent='Serveur inaccessible';errEl.style.display='block';}
+}
+
+// ── COMMENTAIRES ──────────────────────────────────────────────────────────────
+async function loadComments(){
+  const c=document.getElementById('commentsContainer');
+  c.innerHTML='<div style="color:var(--text2);text-align:center;padding:40px">Chargement…</div>';
+  try{
+    // Récupérer tous mes produits puis leurs commentaires
+    const res=await fetch(`${API}/merchant/products`,{headers:{Authorization:`Bearer ${token}`}});
+    if(!res.ok)throw new Error();
+    const products=await res.json();
+    if(!products.length){c.innerHTML='<div style="color:var(--text2);text-align:center;padding:40px">Publiez des produits pour voir les commentaires.</div>';return;}
+    let allComments=[];
+    for(const p of products){
+      const cr=await fetch(`${API}/products/${p.id}/comments`);
+      if(cr.ok){
+        const comments=await cr.json();
+        comments.forEach(cm=>{cm._productName=p.name;cm._productId=p.id;});
+        allComments=[...allComments,...comments];
+      }
+    }
+    allComments.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+    if(!allComments.length){c.innerHTML='<div style="color:var(--text2);text-align:center;padding:40px">Aucun commentaire sur vos produits.</div>';return;}
+    c.innerHTML=allComments.map(cm=>`
+      <div class="comment-item">
+        <div class="comment-meta">
+          <span class="comment-author">${cm.author_name||'—'}</span>
+          <span class="comment-product">🛍️ ${cm._productName||'—'}</span>
+          ${cm.is_from_admin?'<span style="font-size:.7rem;background:rgba(201,169,110,.12);color:var(--accent);padding:2px 7px;border-radius:50px">Admin</span>':''}
+          <span class="comment-date">${new Date(cm.created_at).toLocaleString('fr-FR',{dateStyle:'short',timeStyle:'short'})}</span>
+        </div>
+        <div class="comment-text">${cm.message}</div>
+        ${cm.replies&&cm.replies.length?`
+          <div class="comment-replies">
+            ${cm.replies.map(r=>`
+              <div class="reply-item">
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+                  <span style="font-weight:600;font-size:.82rem">${r.author_name||'—'}</span>
+                  ${r.is_from_admin?'<span style="font-size:.68rem;background:rgba(201,169,110,.1);color:var(--accent);padding:2px 6px;border-radius:50px">Admin</span>':''}
+                  ${r.is_from_seller?'<span style="font-size:.68rem;background:rgba(160,110,232,.1);color:var(--purple);padding:2px 6px;border-radius:50px">Vous</span>':''}
+                </div>
+                <div class="comment-text">${r.message}</div>
+              </div>`).join('')}
+          </div>`:''}
+        ${!cm.is_from_seller&&!cm.is_from_admin?`<button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="openReplyModal('${cm._productId}','${cm.id}','${esc(cm.message)}')">↩️ Répondre</button>`:''}
+      </div>`).join('');
+  }catch(e){c.innerHTML='<div style="color:var(--red);text-align:center;padding:40px">Erreur connexion</div>';}
+}
+
+function openReplyModal(productId,parentId,originalMsg){
+  document.getElementById('replyProductId').value=productId;
+  document.getElementById('replyParentId').value=parentId;
+  document.getElementById('replyText').value='';
+  document.getElementById('replyOriginal').textContent=`"${originalMsg}"`;
+  document.getElementById('replyModal').classList.add('open');
+}
+
+async function submitReply(){
+  const productId=document.getElementById('replyProductId').value;
+  const parentId=document.getElementById('replyParentId').value;
+  const message=document.getElementById('replyText').value.trim();
+  if(!message){toast('Entrez un message','error');return;}
+  try{
+    const res=await fetch(`${API}/products/${productId}/comments`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({message,parent_id:parseInt(parentId)})});
+    if(res.ok){closeModal('replyModal');toast('Réponse envoyée ✅','success');loadComments();}
+    else{const err=await res.json();toast(err.detail||'Erreur','error');}
+  }catch(e){toast('Serveur inaccessible','error');}
+}
+
+// ── CHAT ADMIN ────────────────────────────────────────────────────────────────
+async function openAdminChat(){
+  document.getElementById('chatEmptyState').style.display='none';
+  document.getElementById('chatArea').classList.add('visible');
+  try{
+    const res=await fetch(`${API}/chat/history`,{headers:{Authorization:`Bearer ${token}`}});
+    if(!res.ok)return;
+    const msgs=await res.json();
+    const container=document.getElementById('chatMessages');
+    container.innerHTML='';
+    if(!msgs.length){container.innerHTML='<div style="text-align:center;color:var(--text2);font-size:.82rem;padding:20px">Échangez avec l\'administrateur…</div>';return;}
+    msgs.forEach(m=>appendMsg(m.message,m.is_from_admin,m.created_at,false));
+    container.scrollTop=container.scrollHeight;
+  }catch(e){}
+}
+
+function appendMsg(text,isFromAdmin,timestamp,scroll=true){
+  const container=document.getElementById('chatMessages');
+  const div=document.createElement('div');
+  div.className=`msg-bubble ${isFromAdmin?'msg-admin':'msg-merchant'}`;
+  div.innerHTML=`${text}<div class="msg-time">${timestamp?new Date(timestamp).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):''}</div>`;
+  container.appendChild(div);
+  if(scroll) container.scrollTop=container.scrollHeight;
+}
+
+async function sendMsg(){
+  const input=document.getElementById('chatInput');
+  const msg=input.value.trim();
+  if(!msg)return;
+  input.value='';
+  appendMsg(msg,false,new Date().toISOString());
+  try{
+    await fetch(`${API}/chat/send`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({message:msg})});
+  }catch(e){toast('Message non envoyé','error');}
+}
+
+// ── UTILS ─────────────────────────────────────────────────────────────────────
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+function formatPrice(n){return new Intl.NumberFormat('fr-FR').format(n);}
+function esc(s){return String(s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');}
+function toast(msg,type='info'){
+  const c=document.getElementById('toasts');const t=document.createElement('div');
+  t.className=`toast ${type}`;
+  t.innerHTML=`<span>${{success:'✅',error:'❌',info:'ℹ️'}[type]||'ℹ️'}</span><span>${msg}</span>`;
+  c.appendChild(t);setTimeout(()=>t.remove(),4000);
+}
+</script>
+</body>
+</html>
