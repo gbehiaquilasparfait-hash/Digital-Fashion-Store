@@ -1,4 +1,5 @@
-"""
+p;
+                                                                                      """
 Digital Fashion Store - Backend FastAPI v3.0
 Nouvelles fonctionnalités :
 - Compte Marchand (avec KYC photo identité)
@@ -9,7 +10,7 @@ Nouvelles fonctionnalités :
 - Chat admin/marchand
 """
 
-from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File, Form, WebSocket, WebSocketDisconnect, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -496,10 +497,10 @@ async def register(data: UserRegister, db: aiosqlite.Connection = Depends(get_db
 
 @app.post("/api/auth/register-merchant", tags=["Auth"])
 async def register_merchant(
-    phone: str = Query(...),
-    password: str = Query(...),
-    full_name: str = Query(...),
-    birth_date: str = Query(...),
+    phone: str = Form(...),
+    password: str = Form(...),
+    full_name: str = Form(...),
+    birth_date: str = Form(...),
     id_front: UploadFile = File(...),
     id_back: UploadFile = File(...),
     selfie: UploadFile = File(...),
@@ -513,14 +514,29 @@ async def register_merchant(
     hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
     temp_code = generate_temp_code()
 
-    # Sauvegarder les fichiers KYC
+    # Sauvegarder les fichiers KYC — accepte tout type d'image
+    ALLOWED_IMAGE_TYPES = {
+        "image/jpeg", "image/jpg", "image/png", "image/gif",
+        "image/webp", "image/bmp", "image/tiff", "image/heic", "image/heif"
+    }
     kyc_paths = {}
     for fname, fobj in [("front", id_front), ("back", id_back), ("selfie", selfie)]:
-        ext = fobj.filename.split(".")[-1] if "." in fobj.filename else "jpg"
+        # Détecter l'extension depuis le nom ou le content-type
+        if fobj.filename and "." in fobj.filename:
+            ext = fobj.filename.rsplit(".", 1)[-1].lower()
+        elif fobj.content_type:
+            ext = fobj.content_type.split("/")[-1].lower().replace("jpeg", "jpg")
+        else:
+            ext = "jpg"
+        # Extensions autorisées
+        allowed_exts = {"jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "heic", "heif"}
+        if ext not in allowed_exts:
+            ext = "jpg"
         filename = f"{user_id}_{fname}.{ext}"
         filepath = f"uploads/kyc/{filename}"
+        content = await fobj.read()
         with open(filepath, "wb") as f:
-            f.write(await fobj.read())
+            f.write(content)
         kyc_paths[fname] = filepath
 
     await db.execute("""
@@ -532,13 +548,23 @@ async def register_merchant(
           kyc_paths["front"], kyc_paths["back"], kyc_paths["selfie"]))
     await db.commit()
 
+    # Construire les URLs publiques pour que l'admin puisse voir les photos
+    base_url = "https://web-production-94add.up.railway.app"
     await manager.send_to_admins({
         "event": "new_merchant",
         "data": {
-            "id": user_id, "phone": phone, "full_name": full_name,
-            "birth_date": birth_date, "temp_code": temp_code,
-            "kyc_front": kyc_paths["front"], "kyc_back": kyc_paths["back"],
+            "id": user_id,
+            "phone": phone,
+            "full_name": full_name,
+            "birth_date": birth_date,
+            "temp_code": temp_code,
+            "kyc_front_url": f"{base_url}/{kyc_paths['front']}",
+            "kyc_back_url": f"{base_url}/{kyc_paths['back']}",
+            "kyc_selfie_url": f"{base_url}/{kyc_paths['selfie']}",
+            "kyc_front": kyc_paths["front"],
+            "kyc_back": kyc_paths["back"],
             "kyc_selfie": kyc_paths["selfie"],
+            "kyc_status": "pending",
             "created_at": datetime.utcnow().isoformat()
         }
     })
@@ -981,7 +1007,64 @@ async def get_admin_merchants(
             FROM users {where} ORDER BY created_at DESC""",
         params
     )
-    return [dict(u) for u in await cursor.fetchall()]
+    base_url = "https://web-production-94add.up.railway.app"
+    results = []
+    for u in await cursor.fetchall():
+        d = dict(u)
+        # Ajouter les URLs publiques des photos KYC
+        d["kyc_front_url"] = f"{base_url}/{d['kyc_id_front']}" if d.get("kyc_id_front") else None
+        d["kyc_back_url"] = f"{base_url}/{d['kyc_id_back']}" if d.get("kyc_id_back") else None
+        d["kyc_selfie_url"] = f"{base_url}/{d['kyc_selfie']}" if d.get("kyc_selfie") else None
+        results.append(d)
+    return results
+
+
+@app.get("/api/admin/merchants/{merchant_id}/kyc", tags=["Admin"])
+async def get_merchant_kyc(
+    merchant_id: str,
+    user=Depends(get_admin_user),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Retourne les informations KYC complètes d'un marchand avec URLs des photos."""
+    cursor = await db.execute(
+        """SELECT id, phone, full_name, birth_date, temp_code, suspended,
+           kyc_id_front, kyc_id_back, kyc_selfie, kyc_status, created_at
+           FROM users WHERE id=? AND role='merchant'""",
+        (merchant_id,)
+    )
+    merchant = await cursor.fetchone()
+    if not merchant:
+        raise HTTPException(status_code=404, detail="Marchand introuvable")
+    d = dict(merchant)
+    base_url = "https://web-production-94add.up.railway.app"
+    d["kyc_front_url"] = f"{base_url}/{d['kyc_id_front']}" if d.get("kyc_id_front") else None
+    d["kyc_back_url"] = f"{base_url}/{d['kyc_id_back']}" if d.get("kyc_id_back") else None
+    d["kyc_selfie_url"] = f"{base_url}/{d['kyc_selfie']}" if d.get("kyc_selfie") else None
+    return d
+
+
+@app.patch("/api/admin/merchants/{merchant_id}/kyc-status", tags=["Admin"])
+async def update_kyc_status(
+    merchant_id: str,
+    status_data: dict,
+    user=Depends(get_admin_user),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Mettre à jour le statut KYC d'un marchand (pending / approved / rejected)."""
+    new_status = status_data.get("kyc_status")
+    if new_status not in ("pending", "approved", "rejected"):
+        raise HTTPException(status_code=400, detail="Statut invalide")
+    await db.execute(
+        "UPDATE users SET kyc_status=? WHERE id=? AND role='merchant'",
+        (new_status, merchant_id)
+    )
+    await db.commit()
+    # Notifier le marchand en temps réel
+    await manager.send_to_user(merchant_id, {
+        "event": "kyc_status_updated",
+        "data": {"kyc_status": new_status}
+    })
+    return {"message": f"Statut KYC mis à jour : {new_status}"}
 
 @app.get("/api/admin/merchants/{merchant_id}/products", tags=["Admin"])
 async def get_merchant_products(merchant_id: str, user=Depends(get_admin_user), db: aiosqlite.Connection = Depends(get_db)):
