@@ -1,4 +1,3 @@
-
 """
 Digital Fashion Store - Backend FastAPI v3.0
 Nouvelles fonctionnalités :
