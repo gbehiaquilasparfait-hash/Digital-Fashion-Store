@@ -14,6 +14,7 @@ Conformément au cahier des charges v3.0 :
 - Sécurité QR : seul le livreur assigné peut scanner
 """
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File, WebSocket, WebSocketDisconnect, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,6 +30,7 @@ import string
 import qrcode
 import io
 import base64
+import aiofiles
 from datetime import datetime, timedelta
 from typing import Optional, List
 from pydantic import BaseModel
@@ -40,8 +42,8 @@ SECRET_KEY = os.getenv("SECRET_KEY", "digital_fashion_store_secret_2024")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24 * 7
 DATABASE_FILE = "fashion_store.db"
-DELETE_CODE = "Q17585644q"
-SUSPEND_CODE = "Q17585644q"
+DELETE_CODE = os.getenv("DELETE_CODE", "Q17585644q")
+SUSPEND_CODE = os.getenv("SUSPEND_CODE", "Q17585644q")
 
 # Statuts des commandes
 ORDER_STATUS = {
@@ -50,9 +52,17 @@ ORDER_STATUS = {
     "en_livraison": "Commande en cours de livraison",
     "livree": "Commande livrée",
     "paiement_recu": "Paiement reçu",
+    "annulee": "Commande annulée",
 }
 
-app = FastAPI(title="Digital Fashion Store API", version="3.0.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Gestionnaire de cycle de vie de l'application (remplace @on_event)"""
+    await init_db()
+    asyncio.create_task(refresh_temp_codes())
+    yield
+
+app = FastAPI(title="Digital Fashion Store API", version="3.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -444,11 +454,6 @@ async def init_db():
         print(f"❌ Erreur DB: {e}")
         import traceback; traceback.print_exc()
 
-@app.on_event("startup")
-async def startup():
-    await init_db()
-    asyncio.create_task(refresh_temp_codes())
-
 async def refresh_temp_codes():
     while True:
         await asyncio.sleep(300)
@@ -622,6 +627,7 @@ async def notify_user(db, user_id: str, title: str, message: str, notif_type: st
         INSERT INTO notifications (user_id, title, message, type)
         VALUES (?, ?, ?, ?)
     """, (user_id, title, message, notif_type))
+    await db.commit()
     await manager.send_to_user(user_id, {
         "event": "notification",
         "data": {"title": title, "message": message, "type": notif_type}
@@ -710,8 +716,8 @@ async def register_merchant(
         ext = fobj.filename.split(".")[-1] if "." in fobj.filename else "jpg"
         filename = f"{user_id}_{fname}.{ext}"
         filepath = f"uploads/kyc/{filename}"
-        with open(filepath, "wb") as f:
-            f.write(await fobj.read())
+        async with aiofiles.open(filepath, "wb") as f:
+            await f.write(await fobj.read())
         kyc_paths[fname] = filepath
 
     await db.execute("""
@@ -1059,8 +1065,8 @@ async def upload_product_images(
         ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
         filename = f"{product_id}_{uuid.uuid4().hex[:8]}.{ext}"
         filepath = f"uploads/products/{filename}"
-        with open(filepath, "wb") as f:
-            f.write(await file.read())
+        async with aiofiles.open(filepath, "wb") as f:
+            await f.write(await file.read())
         is_main = 1 if i == 0 else 0
         await db.execute(
             "INSERT INTO product_images (product_id, image_path, is_main) VALUES (?, ?, ?)",
@@ -1321,7 +1327,6 @@ async def validate_order(
                       "Commande validée ✅",
                       f"Votre commande #{order_number} a été validée. Un livreur vous sera attribué bientôt.",
                       "order")
-    await db.commit()
 
     # Notifier admin et marchand
     await manager.send_to_admins({
@@ -1338,7 +1343,6 @@ async def validate_order(
                           "Nouvelle commande 🛍️",
                           f"Commande #{order_number} reçue pour {total_price:,.0f} FCFA",
                           "order")
-        await db.commit()
 
     return {
         "order_id": order_id,
@@ -1484,7 +1488,6 @@ async def attribute_order(
                           "Commande prise en charge 📦",
                           f"Commande #{o['order_number']} : livreur {livreur_dict['full_name']} assigné",
                           "order")
-    await db.commit()
 
     return {
         "message": "Commande attribuée avec succès",
@@ -1573,7 +1576,6 @@ async def scan_qr(
                                   "En cours de livraison 🚚",
                                   f"Commande #{o['order_number']} est en cours de livraison",
                                   "delivery")
-        await db.commit()
 
         await manager.broadcast({
             "event": "order_status_updated",
@@ -1604,7 +1606,6 @@ async def scan_qr(
         if o.get("seller_id"):
             await notify_user(db, o["seller_id"], "Colis livré 📦",
                               f"Commande #{o['order_number']} livrée au client", "delivery")
-        await db.commit()
         await manager.send_to_admins({
             "event": "order_delivered",
             "data": {"order_id": order_id, "order_number": o["order_number"]}
@@ -1637,7 +1638,6 @@ async def mark_payment_received(
     await db.commit()
     await notify_user(db, o["user_id"], "Paiement reçu 💰",
                       f"Le paiement de votre commande #{o['order_number']} a été reçu", "payment")
-    await db.commit()
     return {"message": "Paiement enregistré"}
 
 # ─── LIVREUR ──────────────────────────────────────────────────────────────────
