@@ -426,8 +426,8 @@ tr:hover td{background:rgba(255,255,255,.018)}
     </div>
     <div class="filter-tabs">
       <button class="filter-tab active" onclick="filterOrders('all',this)">Toutes</button>
-      <button class="filter-tab" onclick="filterOrders('validated',this)">✅ Validées</button>
-      <button class="filter-tab" onclick="filterOrders('waiting',this)">⏳ En attente</button>
+      <button class="filter-tab" onclick="filterOrders('validee',this)">✅ Validées</button>
+      <button class="filter-tab" onclick="filterOrders('attente_livreur',this)">⏳ En attente</button>
       <button class="filter-tab" onclick="filterOrders('delivering',this)">🚚 En livraison</button>
       <button class="filter-tab" onclick="filterOrders('delivered',this)">📬 Livrées</button>
       <button class="filter-tab" onclick="filterOrders('paid',this)">💰 Payées</button>
@@ -670,8 +670,10 @@ tr:hover td{background:rgba(255,255,255,.018)}
 <div class="toast-container" id="toasts"></div>
 
 <script>
-const API = 'https://web-production-94add.up.railway.app/api';
-const WS_URL = 'wss://web-production-94add.up.railway.app/ws';
+const BASE_ORIGIN = window.location.origin;
+const API = BASE_ORIGIN + '/api';
+const BASE_URL = BASE_ORIGIN;
+const WS_URL = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws';
 
 let token = localStorage.getItem('dfs_merchant_token');
 let merchantUser = JSON.parse(localStorage.getItem('dfs_merchant_user')||'null');
@@ -682,11 +684,12 @@ let currentOrderFilter = 'all';
 
 // ── STATUS MAP ────────────────────────────────────────────────────────────────
 const STATUS_MAP = {
-  'validated':  {label:'Commande validée',      icon:'✅', cls:'s-validated'},
-  'waiting':    {label:'En attente livreur',     icon:'⏳', cls:'s-waiting'},
-  'delivering': {label:'En cours de livraison',  icon:'🚚', cls:'s-delivering'},
-  'delivered':  {label:'Commande livrée',        icon:'📬', cls:'s-delivered'},
-  'paid':       {label:'Paiement reçu',          icon:'💰', cls:'s-paid'},
+  'validee':         {label:'Commande validée',      icon:'✅', cls:'s-validated'},
+  'attente_livreur': {label:'En attente livreur',     icon:'⏳', cls:'s-waiting'},
+  'en_livraison':    {label:'En cours de livraison',  icon:'🚚', cls:'s-delivering'},
+  'livree':          {label:'Commande livrée',        icon:'📬', cls:'s-delivered'},
+  'paiement_recu':   {label:'Paiement reçu',          icon:'💰', cls:'s-paid'},
+  'annulee':         {label:'Annulée',                icon:'❌', cls:'s-waiting'},
 };
 function statusBadge(s){
   const m=STATUS_MAP[s]||{label:s,icon:'❓',cls:'s-waiting'};
@@ -1001,12 +1004,12 @@ function renderOrderCard(order, compact=false){
   const total = order.total_price || order.total || items.reduce((s,i)=>s+(i.price*i.quantity),0);
   const client = order.client || {};
   const dateStr = order.created_at ? new Date(order.created_at).toLocaleString('fr-FR',{dateStyle:'short',timeStyle:'short'}) : '—';
-  const canGenerateQR = ['validated','waiting'].includes(order.status);
+  const canGenerateQR = ['validee','attente_livreur'].includes(order.status);
   const itemsHtml = items.slice(0,3).map(i=>`
     <div class="order-item-row">
       <span class="order-item-name">${i.product_name||i.name||'—'}</span>
       <span class="order-item-qty">x${i.quantity}</span>
-      <span style="color:var(--purple);font-weight:600">${formatPrice(i.price)} FCFA</span>
+      <span style="color:var(--purple);font-weight:600">${formatPrice(i.unit_price||i.price||0)} FCFA</span>
     </div>`).join('');
   const moreItems = items.length > 3 ? `<div style="font-size:.76rem;color:var(--text2);padding:4px 10px">+${items.length-3} article(s)…</div>` : '';
   return `<div class="order-card">
@@ -1029,6 +1032,24 @@ function renderOrderCard(order, compact=false){
       </div>
     </div>
   </div>`;
+}
+
+
+// ── CONFIRMER REMISE AU LIVREUR ───────────────────────────────────────────────
+async function confirmHandoff(orderId, orderNumber){
+  if(!confirm(`Confirmer que vous avez remis la commande #${String(orderNumber).slice(0,12)} au livreur ?`)) return;
+  try{
+    const res = await fetch(`${API}/merchant/orders/${orderId}/confirm-handoff`, {
+      method:'POST', headers:{Authorization:`Bearer ${token}`}
+    });
+    const data = await res.json();
+    if(res.ok){
+      toast(`✅ Remise confirmée — commande #${String(orderNumber).slice(0,12)} en livraison`,'success');
+      loadOrders();
+    } else {
+      toast(data.detail||'Erreur lors de la confirmation','error');
+    }
+  }catch(e){ toast('Serveur inaccessible','error'); }
 }
 
 // ── QR CODE DE REMISE ─────────────────────────────────────────────────────────
@@ -1083,7 +1104,7 @@ async function openOrderDetail(orderId){
         ${items.map(i=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);gap:8px;font-size:.86rem">
           <span style="font-weight:500">${i.product_name||i.name||'—'}</span>
           <span style="color:var(--text2)">x${i.quantity}</span>
-          <span style="color:var(--purple);font-weight:600">${formatPrice(i.price*i.quantity)} FCFA</span>
+          <span style="color:var(--purple);font-weight:600">${formatPrice((i.unit_price||i.price||0)*i.quantity)} FCFA</span>
         </div>`).join('')}
         <div style="display:flex;justify-content:flex-end;margin-top:10px;font-family:var(--font-display);font-size:1.1rem;color:var(--purple);font-weight:700">Total : ${formatPrice(order.total_price||0)} FCFA</div>
       </div>
@@ -1103,7 +1124,7 @@ async function openOrderDetail(orderId){
           <div>📞 ${deliverer.phone||'—'}</div>
         </div>
       </div>`:''}
-      ${['validated','waiting'].includes(order.status)?`<div style="margin-top:16px"><button class="btn btn-success btn-full" onclick="closeModal('orderDetailModal');showQRCode('${order.id}','${order.order_number||order.id}')">📱 Générer QR Code de remise</button></div>`:''}
+      ${['validee','attente_livreur'].includes(order.status)?`<div style="margin-top:16px"><button class="btn btn-success btn-full" onclick="closeModal('orderDetailModal');showQRCode('${order.id}','${order.order_number||order.id}')">📱 Générer QR Code de remise</button></div><div style="margin-top:8px"><button class="btn btn-primary btn-full" onclick="closeModal('orderDetailModal');confirmHandoff('${order.id}','${order.order_number||order.id}')">✅ Confirmer remise au livreur</button></div>`:''}
     `;
   }catch(e){document.getElementById('orderDetailContent').innerHTML='<div style="color:var(--red)">Erreur connexion</div>';}
 }
@@ -1360,3 +1381,4 @@ function toast(msg,type='info'){
 </script>
 </body>
 </html>
+
