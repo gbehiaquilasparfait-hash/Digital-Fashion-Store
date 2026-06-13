@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Espace Livreur — Digital Fashion Store</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0a0f;--bg2:#111118;--bg3:#1a1a24;--surface:#1e1e2e;--border:#2a2a3e;--text:#f0eff8;--text2:#9896b0;--accent:#c9a96e;--gold:#d4af6e;--accent2:#e8c99a;--green:#4ecb7a;--red:#e85c5c;--blue:#5c9ae8;--purple:#a06ee8;--orange:#e8943c;--radius:14px;--shadow:0 8px 32px rgba(0,0,0,.4);--font-display:'Playfair Display',serif;--font-body:'DM Sans',sans-serif}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-height:100vh}
+.layout{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+.sidebar{background:var(--bg2);border-right:1px solid var(--border);padding:24px 14px;display:flex;flex-direction:column;gap:4px;position:sticky;top:0;height:100vh;overflow-y:auto}
+.sidebar-logo{font-family:var(--font-display);font-style:italic;font-size:1.05rem;background:linear-gradient(135deg,var(--gold),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px;padding:0 8px}
+.sidebar-role{font-size:.7rem;color:var(--text2);padding:0 8px;margin-bottom:16px}
+.sidebar-label{font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;color:var(--text2);padding:8px 8px 2px;margin-top:4px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;cursor:pointer;font-size:.87rem;color:var(--text2);transition:all .2s;border:none;background:none;width:100%;text-align:left;font-family:var(--font-body)}
+.nav-item:hover{background:var(--bg3);color:var(--text)}
+.nav-item.active{background:rgba(201,169,110,.12);color:var(--accent);font-weight:500}
+.nav-item .icon{font-size:1rem;width:20px;text-align:center}
+.nav-badge{margin-left:auto;background:var(--red);color:white;font-size:.62rem;font-weight:700;padding:2px 7px;border-radius:50px;min-width:20px;text-align:center}
+.nav-badge.green{background:var(--green)}
+.main{padding:24px 28px;overflow-x:hidden;max-width:1200px}
+.page{display:none}.page.active{display:block}
+.page-header{margin-bottom:22px;display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.page-header-left h1{font-family:var(--font-display);font-size:1.6rem}
+.page-header-left p{color:var(--text2);font-size:.87rem;margin-top:3px}
+
+/* AUTH */
+.auth-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--bg)}
+.auth-box{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:40px;width:100%;max-width:420px}
+.auth-logo{font-family:var(--font-display);font-style:italic;font-size:1.6rem;background:linear-gradient(135deg,var(--gold),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:4px}
+.auth-sub{color:var(--text2);font-size:.88rem;margin-bottom:24px}
+
+/* FORMS */
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:.8rem;color:var(--text2);margin-bottom:5px;font-weight:500}
+.form-input,.form-select,.form-textarea{width:100%;padding:10px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:var(--font-body);font-size:.9rem;outline:none;transition:border-color .2s,box-shadow .2s}
+.form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(201,169,110,.1)}
+.form-textarea{resize:vertical;min-height:80px}
+.form-err{color:var(--red);font-size:.8rem;margin-top:4px;display:none}
+.form-err.show{display:block}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:50px;font-family:var(--font-body);font-weight:600;font-size:.85rem;cursor:pointer;border:none;transition:all .2s;white-space:nowrap}
+.btn-primary{background:linear-gradient(135deg,var(--gold),var(--accent2));color:#0a0a0f}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(201,169,110,.3)}
+.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
+.btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+.btn-danger{background:rgba(232,92,92,.12);color:var(--red);border:1px solid rgba(232,92,92,.25)}
+.btn-danger:hover{background:rgba(232,92,92,.22)}
+.btn-success{background:rgba(78,203,122,.12);color:var(--green);border:1px solid rgba(78,203,122,.25)}
+.btn-success:hover{background:rgba(78,203,122,.22)}
+.btn-orange{background:rgba(232,148,60,.12);color:var(--orange);border:1px solid rgba(232,148,60,.25)}
+.btn-sm{padding:6px 13px;font-size:.78rem}
+.btn-full{width:100%;justify-content:center;border-radius:12px;padding:12px}
+
+/* CARDS */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:22px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
+.stat-card .stat-icon{font-size:1.4rem;margin-bottom:6px}
+.stat-card .stat-val{font-family:var(--font-display);font-size:1.7rem;color:var(--accent);font-weight:700}
+.stat-card .stat-lbl{font-size:.76rem;color:var(--text2);margin-top:2px}
+
+/* TABS */
+.tab-bar{display:flex;gap:4px;background:var(--bg3);border-radius:12px;padding:4px;margin-bottom:18px;width:fit-content}
+.tab-btn{padding:8px 18px;border-radius:8px;border:none;background:none;color:var(--text2);font-family:var(--font-body);font-size:.85rem;cursor:pointer;transition:all .2s;font-weight:500}
+.tab-btn.active{background:var(--accent);color:#0a0a0f;font-weight:600}
+
+/* MISSIONS */
+.mission-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:14px;transition:box-shadow .2s}
+.mission-card:hover{box-shadow:0 4px 24px rgba(0,0,0,.3)}
+.mission-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;flex-wrap:wrap;gap:8px}
+.mission-num{font-weight:700;color:var(--accent);font-size:.9rem}
+.mission-status{font-size:.72rem;font-weight:600;padding:4px 12px;border-radius:50px}
+.st-attente_livreur{background:rgba(232,196,60,.15);color:#e8c43c}
+.st-en_livraison{background:rgba(201,169,110,.15);color:var(--accent)}
+.st-livree{background:rgba(78,203,122,.15);color:var(--green)}
+.st-paiement_recu{background:rgba(78,203,122,.2);color:var(--green)}
+.mission-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;font-size:.84rem}
+.mission-label{color:var(--text2);font-size:.76rem;margin-bottom:2px}
+.mission-val{font-weight:500}
+.mission-addr{background:var(--bg3);border-radius:10px;padding:12px;font-size:.83rem;margin-bottom:12px;border-left:3px solid var(--accent)}
+.mission-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* QR SCANNER */
+.qr-scanner-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;text-align:center;max-width:480px;margin:0 auto}
+.scanner-preview{width:100%;max-width:320px;height:260px;background:var(--bg3);border-radius:12px;margin:16px auto;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+#qrVideo{width:100%;height:100%;object-fit:cover;border-radius:12px}
+.scanner-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.scan-frame{width:180px;height:180px;border:3px solid var(--accent);border-radius:12px;box-shadow:0 0 0 9999px rgba(0,0,0,.4)}
+.scan-line{position:absolute;width:160px;height:3px;background:var(--accent);animation:scanLine 2s linear infinite;opacity:.8}
+@keyframes scanLine{0%{top:30%}100%{top:70%}}
+.qr-manual-input{display:flex;gap:8px;margin-top:16px}
+.qr-manual-input input{flex:1;padding:10px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:var(--font-body);font-size:.9rem;outline:none}
+.qr-manual-input input:focus{border-color:var(--accent)}
+
+/* CHAT */
+.chat-layout{display:grid;grid-template-columns:1fr;gap:0;height:calc(100vh - 120px);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.chat-messages-area{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px;min-height:300px;max-height:calc(100vh - 260px)}
+.msg-bubble{max-width:75%;padding:10px 14px;border-radius:14px;font-size:.88rem;line-height:1.5;word-break:break-word}
+.msg-bubble.sent{background:linear-gradient(135deg,var(--gold),var(--accent2));color:#0a0a0f;align-self:flex-end;border-bottom-right-radius:4px}
+.msg-bubble.received{background:var(--bg3);color:var(--text);align-self:flex-start;border-bottom-left-radius:4px}
+.msg-time{font-size:.68rem;opacity:.65;margin-top:4px}
+.chat-input-area{padding:14px;border-top:1px solid var(--border);display:flex;gap:8px}
+.chat-input-area input{flex:1;padding:10px 16px;background:var(--bg3);border:1px solid var(--border);border-radius:20px;color:var(--text);font-family:var(--font-body);font-size:.88rem;outline:none}
+.chat-input-area input:focus{border-color:var(--accent)}
+.chat-send{background:linear-gradient(135deg,var(--gold),var(--accent2));border:none;cursor:pointer;width:40px;height:40px;border-radius:50%;color:#0a0a0f;font-size:1rem;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+
+/* HISTORIQUE */
+.hist-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:10px}
+.hist-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px}
+
+/* GPS */
+.gps-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:14px}
+.gps-status{display:flex;align-items:center;gap:8px;font-size:.9rem}
+.gps-dot{width:10px;height:10px;border-radius:50%;background:var(--text2)}
+.gps-dot.active{background:var(--green);animation:glow 1.5s infinite}
+@keyframes glow{0%,100%{box-shadow:0 0 0 0 rgba(78,203,122,.4)}50%{box-shadow:0 0 0 8px rgba(78,203,122,0)}}
+
+/* TABLE */
+.table-wrap{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse}
+thead tr{background:var(--bg3)}
+th{padding:10px 14px;text-align:left;font-size:.73rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text2)}
+td{padding:12px 14px;font-size:.85rem;border-top:1px solid var(--border);vertical-align:middle}
+tr:hover td{background:rgba(255,255,255,.018)}
+
+/* TOAST */
+.toast-container{position:fixed;bottom:24px;left:24px;z-index:9000;display:flex;flex-direction:column;gap:8px}
+.toast{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:10px;font-size:.87rem;box-shadow:var(--shadow);animation:slideIn .3s ease}
+.toast.success{border-color:var(--green)}.toast.error{border-color:var(--red)}.toast.info{border-color:var(--accent)}.toast.warn{border-color:var(--orange)}
+@keyframes slideIn{from{transform:translateX(-20px);opacity:0}to{transform:translateX(0);opacity:1}}
+.loader{display:flex;gap:8px;justify-content:center;padding:40px}
+.loader-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:bounce .8s infinite alternate}
+.loader-dot:nth-child(2){animation-delay:.2s}.loader-dot:nth-child(3){animation-delay:.4s}
+@keyframes bounce{to{transform:translateY(-14px);opacity:.5}}
+.empty{text-align:center;padding:50px 20px;color:var(--text2)}
+.empty .e-icon{font-size:2.8rem;margin-bottom:12px}
+
+/* MODAL QR RESULT */
+.modal-overlay{position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.8);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:20px;opacity:0;pointer-events:none;transition:opacity .3s}
+.modal-overlay.open{opacity:1;pointer-events:all}
+.modal-box{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:32px;max-width:440px;width:100%;text-align:center;transform:scale(.95);transition:transform .3s}
+.modal-overlay.open .modal-box{transform:scale(1)}
+
+/* CONNEXION PROFILE */
+.profile-pill{display:flex;align-items:center;gap:10px;background:var(--bg3);border-radius:50px;padding:8px 16px;margin-bottom:16px;border:1px solid var(--border)}
+.profile-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--accent2));display:flex;align-items:center;justify-content:center;font-weight:700;color:#0a0a0f;font-size:.85rem}
+.ws-dot{width:8px;height:8px;border-radius:50%;background:var(--text2);transition:background .3s}
+.ws-dot.connected{background:var(--green)}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginView" class="auth-wrap">
+  <div class="auth-box">
+    <div class="auth-logo">🚚 Espace Livreur</div>
+    <p class="auth-sub">Digital Fashion Store — Accès livreur</p>
+    <div id="loginPanel">
+      <div class="form-group"><label>Numéro de téléphone</label><input type="tel" class="form-input" id="loginPhone" placeholder="07 XX XX XX XX"></div>
+      <div class="form-group"><label>Mot de passe</label><input type="password" class="form-input" id="loginPassword" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <div class="form-err" id="loginErr"></div>
+      <button class="btn btn-primary btn-full" style="margin-top:8px" onclick="doLogin()">Se connecter</button>
+      <p style="text-align:center;margin-top:16px;font-size:.85rem;color:var(--text2)">Pas encore inscrit ? <span style="color:var(--accent);cursor:pointer" onclick="showPanel('registerPanel','loginPanel')">S'inscrire</span></p>
+    </div>
+    <div id="registerPanel" style="display:none">
+      <div class="form-group"><label>Nom complet *</label><input type="text" class="form-input" id="regName" placeholder="Prénom et Nom"></div>
+      <div class="form-group"><label>Téléphone *</label><input type="tel" class="form-input" id="regPhone" placeholder="07 XX XX XX XX"></div>
+      <div class="form-group"><label>Date de naissance *</label><input type="date" class="form-input" id="regBirth"></div>
+      <div class="form-group"><label>Mot de passe *</label><input type="password" class="form-input" id="regPass" placeholder="Min. 6 caractères"></div>
+      <div class="form-group"><label>Confirmer le mot de passe *</label><input type="password" class="form-input" id="regPass2" placeholder="••••••••"></div>
+      <div class="form-err" id="regErr"></div>
+      <button class="btn btn-primary btn-full" style="margin-top:8px" onclick="doRegister()">Créer mon compte livreur</button>
+      <p style="text-align:center;margin-top:16px;font-size:.85rem;color:var(--text2)"><span style="color:var(--accent);cursor:pointer" onclick="showPanel('loginPanel','registerPanel')">← Retour à la connexion</span></p>
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="appView" style="display:none" class="layout">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sidebar-logo">Digital Fashion Store</div>
+    <div class="sidebar-role" id="sideRole">Livreur</div>
+    <div id="profilePill"></div>
+    <div style="display:flex;align-items:center;gap:6px;padding:6px 8px;margin-bottom:12px;font-size:.78rem;color:var(--text2)">
+      <div class="ws-dot" id="wsDot"></div><span id="wsLabel">Connexion…</span>
+    </div>
+
+    <div class="sidebar-label">Navigation</div>
+    <button class="nav-item active" onclick="navigate('dashboard')"><span class="icon">🏠</span>Tableau de bord</button>
+    <button class="nav-item" onclick="navigate('missions')"><span class="icon">📋</span>Mes missions <span class="nav-badge" id="missionsCount" style="display:none">0</span></button>
+    <button class="nav-item" onclick="navigate('scanner')"><span class="icon">📷</span>Scanner QR</button>
+    <button class="nav-item" onclick="navigate('chat')"><span class="icon">💬</span>Chat admin <span class="nav-badge" id="chatBadgeSide" style="display:none">!</span></button>
+    <button class="nav-item" onclick="navigate('historique')"><span class="icon">📜</span>Historique</button>
+    <button class="nav-item" onclick="navigate('gps')"><span class="icon">📍</span>GPS</button>
+
+    <div style="margin-top:auto;padding-top:20px">
+      <button class="nav-item" onclick="doLogout()" style="color:var(--red)"><span class="icon">🚪</span>Déconnexion</button>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- DASHBOARD -->
+    <div class="page active" id="page-dashboard">
+      <div class="page-header">
+        <div class="page-header-left"><h1>Tableau de bord</h1><p id="dashGreeting">Bonjour 👋</p></div>
+        <button class="btn btn-primary" onclick="navigate('scanner')">📷 Scanner un QR</button>
+      </div>
+      <div class="stat-grid">
+        <div class="stat-card"><div class="stat-icon">📋</div><div class="stat-val" id="statMissionsTotal">0</div><div class="stat-lbl">Missions totales</div></div>
+        <div class="stat-card"><div class="stat-icon">🚚</div><div class="stat-val" id="statEnCours">0</div><div class="stat-lbl">En cours</div></div>
+        <div class="stat-card"><div class="stat-icon">✅</div><div class="stat-val" id="statLivrees">0</div><div class="stat-lbl">Livrées</div></div>
+        <div class="stat-card"><div class="stat-icon">💰</div><div class="stat-val" id="statPayees">0</div><div class="stat-lbl">Payées</div></div>
+      </div>
+      <h3 style="font-family:var(--font-display);margin-bottom:14px">Missions actives</h3>
+      <div id="dashMissions"></div>
+    </div>
+
+    <!-- MISSIONS -->
+    <div class="page" id="page-missions">
+      <div class="page-header">
+        <div class="page-header-left"><h1>Mes Missions</h1><p>Commandes qui vous sont attribuées</p></div>
+        <button class="btn btn-ghost" onclick="loadMissions()">🔄 Rafraîchir</button>
+      </div>
+      <div class="tab-bar">
+        <button class="tab-btn active" onclick="filterMissions('actives',this)">Actives</button>
+        <button class="tab-btn" onclick="filterMissions('toutes',this)">Toutes</button>
+      </div>
+      <div id="missionsList"></div>
+    </div>
+
+    <!-- SCANNER -->
+    <div class="page" id="page-scanner">
+      <div class="page-header">
+        <div class="page-header-left"><h1>Scanner QR Code</h1><p>Scannez le QR du marchand ou du client</p></div>
+      </div>
+      <div class="qr-scanner-wrap card">
+        <p style="color:var(--text2);font-size:.88rem;margin-bottom:4px">Pointez la caméra vers le QR Code</p>
+        <div class="scanner-preview">
+          <video id="qrVideo" autoplay muted playsinline></video>
+          <div class="scanner-overlay"><div class="scan-frame"><div class="scan-line"></div></div></div>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:center;margin-bottom:16px">
+          <button class="btn btn-primary" onclick="startCamera()" id="startCamBtn">📷 Activer caméra</button>
+          <button class="btn btn-ghost" onclick="stopCamera()" id="stopCamBtn" style="display:none">⏹ Stopper</button>
+        </div>
+        <p style="color:var(--text2);font-size:.82rem;margin-bottom:8px">— ou saisir manuellement —</p>
+        <div class="qr-manual-input">
+          <input type="text" id="qrManualInput" placeholder="DFS-QR:ORDER:… ou DFS-QR:DELIVERY:…">
+          <button class="btn btn-primary btn-sm" onclick="scanManual()">Valider</button>
+        </div>
+        <div style="margin-top:16px;display:flex;align-items:center;gap:8px;justify-content:center">
+          <label style="font-size:.85rem;color:var(--text2);display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" id="gpsForScan" checked style="accent-color:var(--accent)"> Inclure ma position GPS
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- CHAT -->
+    <div class="page" id="page-chat">
+      <div class="page-header">
+        <div class="page-header-left"><h1>Chat Admin</h1><p>Messagerie avec l'administration</p></div>
+      </div>
+      <div style="display:flex;flex-direction:column;height:calc(100vh - 180px);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+        <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
+          <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--accent2));display:flex;align-items:center;justify-content:center;font-weight:700;color:#0a0a0f">A</div>
+          <div><div style="font-weight:600;font-size:.9rem">Administration</div><div style="font-size:.76rem;color:var(--green)">● En ligne</div></div>
+        </div>
+        <div class="chat-messages-area" id="chatMessages">
+          <div style="text-align:center;color:var(--text2);font-size:.82rem;padding:20px">Envoyez un message à l'administration</div>
+        </div>
+        <div class="chat-input-area">
+          <input type="text" id="chatInput" placeholder="Votre message…" onkeydown="if(event.key==='Enter')sendChat()">
+          <button class="chat-send" onclick="sendChat()">➤</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- HISTORIQUE -->
+    <div class="page" id="page-historique">
+      <div class="page-header">
+        <div class="page-header-left"><h1>Historique</h1><p>Toutes vos livraisons effectuées</p></div>
+        <button class="btn btn-ghost" onclick="loadHistorique()">🔄 Rafraîchir</button>
+      </div>
+      <div id="histContent"></div>
+    </div>
+
+    <!-- GPS -->
+    <div class="page" id="page-gps">
+      <div class="page-header">
+        <div class="page-header-left"><h1>GPS &amp; Position</h1><p>Partagez votre position avec l'admin</p></div>
+      </div>
+      <div class="gps-card">
+        <div class="gps-status" style="margin-bottom:14px">
+          <div class="gps-dot" id="gpsDot"></div>
+          <span id="gpsLabel">GPS désactivé</span>
+        </div>
+        <div id="gpsCoords" style="font-size:.85rem;color:var(--text2);margin-bottom:16px">—</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-success" onclick="startGps()">📍 Activer le GPS</button>
+          <button class="btn btn-danger" onclick="stopGps()">⏹ Désactiver</button>
+          <button class="btn btn-ghost" onclick="sendGpsNow()">📤 Envoyer position</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3 style="font-family:var(--font-display);margin-bottom:12px">Infos GPS</h3>
+        <p style="font-size:.85rem;color:var(--text2);line-height:1.7">Lorsque vous activez le GPS, votre position est partagée avec l'administrateur en temps réel. Elle est également enregistrée automatiquement lors du scan des QR codes des marchands et clients.</p>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /layout -->
+
+<!-- MODAL RÉSULTAT SCAN -->
+<div class="modal-overlay" id="scanResultModal">
+  <div class="modal-box">
+    <div id="scanResultIcon" style="font-size:3rem;margin-bottom:12px">✅</div>
+    <h2 id="scanResultTitle" style="font-family:var(--font-display);margin-bottom:8px"></h2>
+    <p id="scanResultMsg" style="color:var(--text2);font-size:.9rem;margin-bottom:20px;line-height:1.6"></p>
+    <button class="btn btn-primary btn-full" onclick="closeScanModal()">Fermer</button>
+  </div>
+</div>
+
+<div class="toast-container" id="toasts"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<script>
+const API = 'https://web-production-94add.up.railway.app/api';
+const WS_URL = 'wss://web-production-94add.up.railway.app/ws';
+
+let token = localStorage.getItem('dfs_livreur_token');
+let currentUser = JSON.parse(localStorage.getItem('dfs_livreur_user')||'null');
+let ws = null;
+let gpsWatchId = null;
+let gpsCoords = null;
+let cameraStream = null;
+let scanInterval = null;
+let allMissions = [];
+let currentMissionsFilter = 'actives';
+
+const STATUS_LABEL = {
+  'validee':'Validée','attente_livreur':'En attente','en_livraison':'En livraison',
+  'livree':'Livrée','paiement_recu':'Paiement reçu','annulee':'Annulée'
+};
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+if(token && currentUser) {
+  document.getElementById('loginView').style.display='none';
+  document.getElementById('appView').style.display='grid';
+  initApp();
+}
+
+function initApp(){
+  updateProfilePill();
+  connectWS();
+  loadDashboard();
+}
+
+function showPanel(show,hide){
+  document.getElementById(show).style.display='block';
+  document.getElementById(hide).style.display='none';
+}
+
+// ── Auth ─────────────────────────────────────────────────────────────────────
+async function doLogin(){
+  const phone=document.getElementById('loginPhone').value.trim();
+  const password=document.getElementById('loginPassword').value;
+  const errEl=document.getElementById('loginErr'); errEl.classList.remove('show');
+  if(!phone||!password){errEl.textContent='Remplissez tous les champs';errEl.classList.add('show');return;}
+  try{
+    const res=await fetch(`${API}/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,password})});
+    const data=await res.json();
+    if(res.ok){
+      if(data.user.role!=='livreur'){errEl.textContent='Ce compte n\'est pas un compte livreur';errEl.classList.add('show');return;}
+      token=data.access_token; currentUser=data.user;
+      localStorage.setItem('dfs_livreur_token',token);
+      localStorage.setItem('dfs_livreur_user',JSON.stringify(currentUser));
+      document.getElementById('loginView').style.display='none';
+      document.getElementById('appView').style.display='grid';
+      initApp();
+    } else {
+      if(data.detail==='ACCOUNT_SUSPENDED'){errEl.textContent='Votre compte est suspendu. Contactez l\'admin.';errEl.classList.add('show');return;}
+      errEl.textContent=data.detail||'Identifiants invalides'; errEl.classList.add('show');
+    }
+  }catch(e){errEl.textContent='Serveur inaccessible';errEl.classList.add('show');}
+}
+
+async function doRegister(){
+  const full_name=document.getElementById('regName').value.trim();
+  const phone=document.getElementById('regPhone').value.trim();
+  const birth_date=document.getElementById('regBirth').value;
+  const password=document.getElementById('regPass').value;
+  const password2=document.getElementById('regPass2').value;
+  const errEl=document.getElementById('regErr'); errEl.classList.remove('show');
+  if(!full_name||!phone||!birth_date||!password||!password2){errEl.textContent='Tous les champs sont obligatoires';errEl.classList.add('show');return;}
+  if(password.length<6){errEl.textContent='Mot de passe trop court (6 car. min)';errEl.classList.add('show');return;}
+  if(password!==password2){errEl.textContent='Les mots de passe ne correspondent pas';errEl.classList.add('show');return;}
+  try{
+    const res=await fetch(`${API}/auth/register-livreur`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,password,full_name,birth_date})});
+    const data=await res.json();
+    if(res.ok){
+      token=data.access_token; currentUser=data.user;
+      localStorage.setItem('dfs_livreur_token',token);
+      localStorage.setItem('dfs_livreur_user',JSON.stringify(currentUser));
+      document.getElementById('loginView').style.display='none';
+      document.getElementById('appView').style.display='grid';
+      initApp(); toast('Compte créé ! Bienvenue 🎉','success');
+    } else {errEl.textContent=data.detail||'Erreur inscription';errEl.classList.add('show');}
+  }catch(e){errEl.textContent='Serveur inaccessible';errEl.classList.add('show');}
+}
+
+function doLogout(){
+  if(cameraStream) stopCamera();
+  if(gpsWatchId) stopGps();
+  if(ws) ws.close();
+  localStorage.removeItem('dfs_livreur_token');
+  localStorage.removeItem('dfs_livreur_user');
+  token=null; currentUser=null;
+  document.getElementById('appView').style.display='none';
+  document.getElementById('loginView').style.display='flex';
+}
+
+// ── Profile ───────────────────────────────────────────────────────────────────
+function updateProfilePill(){
+  if(!currentUser) return;
+  document.getElementById('profilePill').innerHTML=`
+    <div class="profile-pill">
+      <div class="profile-avatar">${(currentUser.full_name||'L').charAt(0).toUpperCase()}</div>
+      <div style="min-width:0"><div style="font-weight:600;font-size:.83rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${currentUser.full_name||currentUser.phone}</div>
+      <div style="font-size:.72rem;color:var(--green)">● Livreur</div></div>
+    </div>`;
+  document.getElementById('dashGreeting').textContent=`Bonjour, ${currentUser.full_name||currentUser.phone} 👋`;
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+function navigate(page){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById(`page-${page}`).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n=>{if(n.getAttribute('onclick')&&n.getAttribute('onclick').includes(`'${page}'`))n.classList.add('active');});
+  if(page==='missions') loadMissions();
+  if(page==='chat') loadChatHistory();
+  if(page==='historique') loadHistorique();
+  if(page==='gps') {};
+  if(page==='dashboard') loadDashboard();
+  // reset chat badge
+  if(page==='chat'){document.getElementById('chatBadgeSide').style.display='none';}
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+async function loadDashboard(){
+  await loadMissions(false);
+  const actives=allMissions.filter(m=>m.status==='attente_livreur'||m.status==='en_livraison');
+  const livrees=allMissions.filter(m=>m.status==='livree');
+  const payees=allMissions.filter(m=>m.status==='paiement_recu');
+  document.getElementById('statMissionsTotal').textContent=allMissions.length;
+  document.getElementById('statEnCours').textContent=actives.length;
+  document.getElementById('statLivrees').textContent=livrees.length;
+  document.getElementById('statPayees').textContent=payees.length;
+  // Badge sidebar
+  if(actives.length>0){document.getElementById('missionsCount').style.display='flex';document.getElementById('missionsCount').textContent=actives.length;}
+  else document.getElementById('missionsCount').style.display='none';
+
+  const container=document.getElementById('dashMissions');
+  const recents=actives.slice(0,3);
+  if(!recents.length){container.innerHTML='<div class="empty"><div class="e-icon">📋</div><p>Aucune mission active</p></div>';return;}
+  container.innerHTML=recents.map(m=>renderMissionCard(m,true)).join('');
+}
+
+// ── Missions ──────────────────────────────────────────────────────────────────
+async function loadMissions(updateUI=true){
+  if(updateUI) document.getElementById('missionsList').innerHTML='<div class="loader"><div class="loader-dot"></div><div class="loader-dot"></div><div class="loader-dot"></div></div>';
+  try{
+    const res=await fetch(`${API}/livreur/missions`,{headers:{Authorization:`Bearer ${token}`}});
+    if(!res.ok) throw new Error(res.status);
+    allMissions=await res.json();
+    if(updateUI) renderMissions();
+  }catch(e){
+    if(updateUI) document.getElementById('missionsList').innerHTML='<div class="empty"><div class="e-icon">⚠️</div><p>Erreur de chargement</p></div>';
+  }
+}
+
+function filterMissions(filter,btn){
+  currentMissionsFilter=filter;
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active'); renderMissions();
+}
+
+function renderMissions(){
+  const container=document.getElementById('missionsList');
+  let list=allMissions;
+  if(currentMissionsFilter==='actives') list=allMissions.filter(m=>m.status==='attente_livreur'||m.status==='en_livraison');
+  if(!list.length){container.innerHTML='<div class="empty"><div class="e-icon">📭</div><p>Aucune mission dans cette catégorie</p></div>';return;}
+  container.innerHTML=list.map(m=>renderMissionCard(m,false)).join('');
+}
+
+function renderMissionCard(m, mini){
+  const stClass='st-'+m.status;
+  const canScanMarchand=m.status==='attente_livreur';
+  const canScanClient=m.status==='en_livraison';
+  return `<div class="mission-card">
+    <div class="mission-header">
+      <div>
+        <div class="mission-num">📦 #${m.order_number||m.id?.substring(0,8)}</div>
+        <div style="font-size:.76rem;color:var(--text2)">${m.created_at?new Date(m.created_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'long'}):'—'}</div>
+      </div>
+      <span class="mission-status ${stClass}">${STATUS_LABEL[m.status]||m.status}</span>
+    </div>
+    ${!mini?`<div class="mission-grid">
+      <div><div class="mission-label">Client</div><div class="mission-val">${m.client_name||'—'}</div><div style="font-size:.78rem;color:var(--text2)">${m.client_phone_delivery||m.client_phone||'—'}</div></div>
+      <div><div class="mission-label">Marchand</div><div class="mission-val">${m.seller_name||'—'}</div><div style="font-size:.78rem;color:var(--text2)">${m.seller_phone||'—'}</div></div>
+    </div>
+    <div class="mission-addr"><div style="font-size:.72rem;color:var(--accent);text-transform:uppercase;margin-bottom:4px">📍 Adresse de livraison</div>
+      ${m.client_address||'—'}${m.client_quartier?', '+m.client_quartier:''} — ${m.client_ville||''}<br>
+      ${m.client_repere?`<em style="color:var(--text2)">${m.client_repere}</em>`:''}
+    </div>
+    <div style="font-size:.85rem;margin-bottom:10px">💰 Total : <strong style="color:var(--accent)">${formatPrice(m.total_price)} FCFA</strong></div>`:''}
+    <div class="mission-actions">
+      ${canScanMarchand?`<button class="btn btn-orange btn-sm" onclick="preScan('${m.id}','ORDER','${m.order_number}')">📷 Scanner QR Marchand</button>`:''}
+      ${canScanClient?`<button class="btn btn-success btn-sm" onclick="preScan('${m.id}','DELIVERY','${m.order_number}')">📷 Scanner QR Client</button>`:''}
+      ${!mini&&!canScanMarchand&&!canScanClient?`<span style="font-size:.8rem;color:var(--text2)">Aucune action disponible pour ce statut</span>`:''}
+      ${mini?`<button class="btn btn-ghost btn-sm" onclick="navigate('missions')">Voir détails →</button>`:''}
+    </div>
+  </div>`;
+}
+
+// ── QR SCANNER ────────────────────────────────────────────────────────────────
+let preScanData = null;
+
+function preScan(orderId, type, orderNum){
+  preScanData={orderId, type, orderNum};
+  navigate('scanner');
+  document.getElementById('qrManualInput').value=`DFS-QR:${type}:${orderId}:${orderNum}`;
+  toast(`Mode : scan ${type==='ORDER'?'MARCHAND':'CLIENT'} pour #${orderNum}`,'info');
+}
+
+async function startCamera(){
+  try{
+    cameraStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    document.getElementById('qrVideo').srcObject=cameraStream;
+    document.getElementById('startCamBtn').style.display='none';
+    document.getElementById('stopCamBtn').style.display='flex';
+    startQRDetection();
+    toast('Caméra activée. Pointez vers le QR code.','info');
+  }catch(e){toast('Impossible d\'accéder à la caméra : '+e.message,'error');}
+}
+
+function stopCamera(){
+  if(cameraStream){cameraStream.getTracks().forEach(t=>t.stop()); cameraStream=null;}
+  if(scanInterval){clearInterval(scanInterval);scanInterval=null;}
+  document.getElementById('qrVideo').srcObject=null;
+  document.getElementById('startCamBtn').style.display='flex';
+  document.getElementById('stopCamBtn').style.display='none';
+}
+
+function startQRDetection(){
+  const video=document.getElementById('qrVideo');
+  const canvas=document.createElement('canvas');
+  const ctx=canvas.getContext('2d');
+  scanInterval=setInterval(()=>{
+    if(video.readyState===video.HAVE_ENOUGH_DATA){
+      canvas.width=video.videoWidth; canvas.height=video.videoHeight;
+      ctx.drawImage(video,0,0,canvas.width,canvas.height);
+      const imgData=ctx.getImageData(0,0,canvas.width,canvas.height);
+      const code=jsQR(imgData.data,imgData.width,imgData.height,{inversionAttempts:'dontInvert'});
+      if(code){stopCamera();processQRData(code.data);}
+    }
+  },300);
+}
+
+async function scanManual(){
+  const val=document.getElementById('qrManualInput').value.trim();
+  if(!val){toast('Entrez les données du QR code','info');return;}
+  await processQRData(val);
+}
+
+async function processQRData(qrData){
+  let lat=null, lng=null;
+  if(document.getElementById('gpsForScan').checked && gpsCoords){
+    lat=gpsCoords.latitude; lng=gpsCoords.longitude;
+  }
+  try{
+    const res=await fetch(`${API}/qr/scan`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+      body:JSON.stringify({qr_data:qrData, lat, lng})
+    });
+    const data=await res.json();
+    if(res.ok){
+      showScanResult('✅','Scan validé !',`Commande #${data.order_number}\nStatut : ${data.status_label||data.new_status}`,true);
+      loadDashboard();
+    } else {
+      showScanResult('❌','Scan refusé',data.detail||'Scan non autorisé',false);
+    }
+  }catch(e){toast('Erreur réseau lors du scan','error');}
+  preScanData=null;
+}
+
+function showScanResult(icon, title, msg, success){
+  document.getElementById('scanResultIcon').textContent=icon;
+  document.getElementById('scanResultTitle').textContent=title;
+  document.getElementById('scanResultMsg').textContent=msg;
+  document.getElementById('scanResultModal').classList.add('open');
+}
+
+function closeScanModal(){
+  document.getElementById('scanResultModal').classList.remove('open');
+  document.getElementById('qrManualInput').value='';
+}
+
+// ── Chat ──────────────────────────────────────────────────────────────────────
+async function loadChatHistory(){
+  const container=document.getElementById('chatMessages');
+  container.innerHTML='<div style="text-align:center;color:var(--text2);font-size:.82rem;padding:20px">Chargement…</div>';
+  try{
+    const res=await fetch(`${API}/chat/history`,{headers:{Authorization:`Bearer ${token}`}});
+    if(!res.ok) throw new Error();
+    const msgs=await res.json();
+    container.innerHTML='';
+    if(!msgs.length){container.innerHTML='<div style="text-align:center;color:var(--text2);font-size:.82rem;padding:20px">Aucun message. Envoyez un message à l\'admin.</div>';return;}
+    msgs.forEach(m=>appendMsg(m.message,m.is_from_admin,m.created_at,false));
+    container.scrollTop=container.scrollHeight;
+  }catch(e){container.innerHTML='<div style="text-align:center;color:var(--text2);font-size:.82rem;padding:20px">Erreur de chargement</div>';}
+}
+
+function appendMsg(text, fromAdmin, timestamp, scroll=true){
+  const container=document.getElementById('chatMessages');
+  const div=document.createElement('div');
+  div.className=`msg-bubble ${fromAdmin?'received':'sent'}`;
+  const time=timestamp?new Date(timestamp).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'';
+  div.innerHTML=`<div>${text}</div><div class="msg-time" style="text-align:${fromAdmin?'left':'right'}">${time}</div>`;
+  container.appendChild(div);
+  if(scroll) container.scrollTop=container.scrollHeight;
+}
+
+async function sendChat(){
+  const input=document.getElementById('chatInput');
+  const msg=input.value.trim(); if(!msg) return;
+  input.value=''; appendMsg(msg,false,new Date().toISOString());
+  try{await fetch(`${API}/chat/send`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({message:msg})});}
+  catch(e){toast('Message non envoyé','error');}
+}
+
+// ── Historique ────────────────────────────────────────────────────────────────
+async function loadHistorique(){
+  const container=document.getElementById('histContent');
+  container.innerHTML='<div class="loader"><div class="loader-dot"></div><div class="loader-dot"></div><div class="loader-dot"></div></div>';
+  try{
+    const res=await fetch(`${API}/livreur/missions`,{headers:{Authorization:`Bearer ${token}`}});
+    if(!res.ok) throw new Error();
+    const missions=await res.json();
+    const done=missions.filter(m=>m.status==='livree'||m.status==='paiement_recu');
+    if(!done.length){container.innerHTML='<div class="empty"><div class="e-icon">📜</div><p>Aucune livraison effectuée</p></div>';return;}
+    container.innerHTML=`<div class="table-wrap"><table>
+      <thead><tr><th>Commande</th><th>Date</th><th>Client</th><th>Total</th><th>Statut</th></tr></thead>
+      <tbody>
+        ${done.map(m=>`<tr>
+          <td><strong>#${m.order_number||'—'}</strong></td>
+          <td>${m.created_at?new Date(m.created_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'}):'—'}</td>
+          <td>${m.client_name||'—'}<br><span style="font-size:.76rem;color:var(--text2)">${m.client_phone||''}</span></td>
+          <td style="color:var(--accent);font-weight:600">${formatPrice(m.total_price)} FCFA</td>
+          <td><span class="mission-status st-${m.status}">${STATUS_LABEL[m.status]||m.status}</span></td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>`;
+  }catch(e){container.innerHTML='<div class="empty"><div class="e-icon">⚠️</div><p>Erreur de chargement</p></div>';}
+}
+
+// ── GPS ───────────────────────────────────────────────────────────────────────
+function startGps(){
+  if(!navigator.geolocation){toast('GPS non disponible sur cet appareil','error');return;}
+  gpsWatchId=navigator.geolocation.watchPosition(pos=>{
+    gpsCoords={latitude:pos.coords.latitude, longitude:pos.coords.longitude};
+    document.getElementById('gpsDot').classList.add('active');
+    document.getElementById('gpsLabel').textContent='GPS actif';
+    document.getElementById('gpsCoords').textContent=`Lat: ${gpsCoords.latitude.toFixed(6)} | Lng: ${gpsCoords.longitude.toFixed(6)}`;
+  },err=>{toast('Erreur GPS : '+err.message,'error');},{enableHighAccuracy:true,maximumAge:0});
+  toast('GPS activé','success');
+}
+
+function stopGps(){
+  if(gpsWatchId){navigator.geolocation.clearWatch(gpsWatchId);gpsWatchId=null;}
+  gpsCoords=null;
+  document.getElementById('gpsDot').classList.remove('active');
+  document.getElementById('gpsLabel').textContent='GPS désactivé';
+  document.getElementById('gpsCoords').textContent='—';
+  toast('GPS désactivé','info');
+}
+
+async function sendGpsNow(){
+  if(!gpsCoords){toast('Activez d\'abord le GPS','info');return;}
+  try{
+    const res=await fetch(`${API}/gps/update`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({lat:gpsCoords.latitude,lng:gpsCoords.longitude,consent:true,context:'manual'})});
+    if(res.ok) toast('Position envoyée à l\'admin ✅','success');
+    else toast('Erreur lors de l\'envoi','error');
+  }catch(e){toast('Erreur réseau','error');}
+}
+
+// ── WebSocket ─────────────────────────────────────────────────────────────────
+function connectWS(){
+  try{
+    const url=`${WS_URL}?token=${token}`;
+    ws=new WebSocket(url);
+    ws.onopen=()=>{document.getElementById('wsDot').classList.add('connected');document.getElementById('wsLabel').textContent='Connecté';};
+    ws.onclose=()=>{document.getElementById('wsDot').classList.remove('connected');document.getElementById('wsLabel').textContent='Déconnecté';setTimeout(connectWS,5000);};
+    ws.onerror=()=>{};
+    ws.onmessage=e=>{try{handleWS(JSON.parse(e.data));}catch{}};
+  }catch(e){}
+}
+
+function handleWS(msg){
+  if(msg.event==='account_suspended'){toast('Votre compte a été suspendu','error');setTimeout(doLogout,2000);return;}
+  if(msg.event==='notification'){
+    toast(`${msg.data.title} — ${msg.data.message}`,msg.data.type==='mission'?'warn':'info');
+    if(msg.data.type==='mission'){loadDashboard();}
+  }
+  if(msg.event==='new_message'&&msg.data.is_from_admin){
+    const onChat=document.getElementById('page-chat').classList.contains('active');
+    appendMsg(msg.data.message,true,msg.data.created_at);
+    if(!onChat){document.getElementById('chatBadgeSide').style.display='flex';toast(`Admin : ${msg.data.message.substring(0,40)}…`,'info');}
+  }
+  if(msg.event==='order_status_updated') loadDashboard();
+}
+
+// ── Utils ─────────────────────────────────────────────────────────────────────
+function formatPrice(n){return new Intl.NumberFormat('fr-FR').format(n||0);}
+function toast(msg,type='info'){
+  const c=document.getElementById('toasts'); const t=document.createElement('div');
+  t.className=`toast ${type}`;
+  t.innerHTML=`<span>${{success:'✅',error:'❌',info:'ℹ️',warn:'⚠️'}[type]||'ℹ️'}</span><span>${msg}</span>`;
+  c.appendChild(t); setTimeout(()=>t.remove(),4000);
+}
+</script>
+</body>
+</html>
