@@ -525,8 +525,10 @@ tr:hover td{background:rgba(255,255,255,.018)}
 <div class="toast-container" id="toasts"></div>
 
 <script>
-const API = 'https://web-production-94add.up.railway.app/api';
-const WS_URL_BASE = 'wss://web-production-94add.up.railway.app/ws';
+const BASE_ORIGIN = window.location.origin;
+const API = BASE_ORIGIN + '/api';
+const BASE_URL = BASE_ORIGIN;
+const WS_URL_BASE = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws';
 
 let token = localStorage.getItem('dfs_admin_token');
 let adminUser = JSON.parse(localStorage.getItem('dfs_admin_user')||'null');
@@ -653,7 +655,16 @@ function handleAdminWSMessage(msg){
     if(currentChatUserId===msg.data.sender_id) appendAdminMessage(msg.data.message,false,msg.data.created_at,role);
     else loadConversations();
   }
-  if(msg.event==='new_order') toast(`📦 Commande de ${msg.data.user_phone} — ${msg.data.product_name}`,'info');
+  if(msg.event==='new_livreur'){
+    const d=msg.data;
+    toast(`🚴 Nouveau livreur : ${d.full_name}`,'success');
+    if(document.getElementById('page-livreurs')&&document.getElementById('page-livreurs').classList.contains('active')) loadLivreursTable('');
+  }
+  if(msg.event==='order_status_updated'){
+    toast(`📦 Commande #${(msg.data.order_number||'').slice(0,12)} → ${msg.data.status_label||msg.data.status}`,'info');
+    if(document.getElementById('page-orders').classList.contains('active')) loadOrdersTable();
+  }
+  if(msg.event==='new_order') toast(`📦 Nouvelle commande de ${msg.data.user_phone||''}`,'info');
   if(msg.event==='new_merchant_product'){
     toast(`🏪 Nouveau produit marchand de ${msg.data.seller_name} : ${msg.data.product.name}`,'info');
     if(document.getElementById('page-merchantProducts').classList.contains('active')) loadMerchantProducts();
