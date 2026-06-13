@@ -210,6 +210,10 @@ tr:hover td{background:rgba(255,255,255,.018)}
   <div class="sidebar-label">Utilisateurs</div>
   <button class="nav-item" onclick="showPage('clients',this)"><span class="icon">👥</span> Clients</button>
   <button class="nav-item" onclick="showPage('merchants',this)"><span class="icon">🏪</span> Marchands</button>
+  <button class="nav-item" onclick="showPage('livreurs',this)"><span class="icon">🚚</span> Livreurs</button>
+  <div class="sidebar-label">Suivi & Sécurité</div>
+  <button class="nav-item" onclick="showPage('qrscans',this)"><span class="icon">🔍</span> Scans QR</button>
+  <button class="nav-item" onclick="showPage('gps',this)"><span class="icon">📍</span> GPS</button>
   <div class="sidebar-label">Contenu</div>
   <button class="nav-item" onclick="showPage('comments',this)"><span class="icon">💬</span> Commentaires</button>
   <button class="nav-item" onclick="showPage('likes',this)"><span class="icon">❤️</span> Top Likes</button>
@@ -255,7 +259,6 @@ tr:hover td{background:rgba(255,255,255,.018)}
           <div class="form-group"><label>Stock *</label><input type="number" class="form-input" id="pStock" min="0" value="0"></div>
         </div>
         <div class="form-group"><label>Catégorie</label><select class="form-select" id="pCategory"><option value="">— Choisir —</option></select></div>
-        <div class="form-group"><label>Lien Wave</label><input type="url" class="form-input" id="pWave" placeholder="https://pay.wave.com/m/…"></div>
       </div>
       <div style="display:flex;flex-direction:column;gap:18px">
         <div class="card">
@@ -297,22 +300,59 @@ tr:hover td{background:rgba(255,255,255,.018)}
       <button class="btn btn-ghost" onclick="document.getElementById('mpSearch').value='';loadMerchantProducts()">✕ Tout</button>
     </div>
     <div class="table-wrap">
-      <table><thead><tr><th>Produit</th><th>Marchand</th><th>Téléphone</th><th>Prix</th><th>Lien Wave</th><th>Stock</th><th>Actions</th></tr></thead>
-      <tbody id="mpTableBody"><tr><td colspan="7" style="text-align:center;color:var(--text2);padding:36px">Chargement…</td></tr></tbody></table>
+      <table><thead><tr><th>Produit</th><th>Marchand</th><th>Téléphone</th><th>Prix</th><th>Stock</th><th>Actions</th></tr></thead>
+      <tbody id="mpTableBody"><tr><td colspan="6" style="text-align:center;color:var(--text2);padding:36px">Chargement…</td></tr></tbody></table>
     </div>
   </div>
 
   <!-- COMMANDES -->
   <div id="page-orders" class="page">
-    <div class="page-header"><div class="page-header-left"><h1>Commandes</h1><p>Recherchez par ID ou numéro client</p></div></div>
+    <div class="page-header"><div class="page-header-left"><h1>Commandes</h1><p>Suivi, attribution aux livreurs et paiements</p></div></div>
     <div class="search-bar">
-      <input type="text" id="orderSearch" placeholder="ID commande ou numéro client…" onkeydown="if(event.key==='Enter')searchOrders()">
+      <input type="text" id="orderSearch" placeholder="N° commande, téléphone ou nom client…" onkeydown="if(event.key==='Enter')searchOrders()">
       <button class="btn btn-ghost" onclick="searchOrders()">🔍</button>
       <button class="btn btn-ghost" onclick="document.getElementById('orderSearch').value='';loadOrdersTable()">✕ Tout</button>
     </div>
+    <div class="tab-bar" style="margin-bottom:14px">
+      <button class="tab-btn active" onclick="filterOrdersStatus('',this)">Toutes</button>
+      <button class="tab-btn" onclick="filterOrdersStatus('validee',this)">À attribuer</button>
+      <button class="tab-btn" onclick="filterOrdersStatus('attente_livreur',this)">Attribuées</button>
+      <button class="tab-btn" onclick="filterOrdersStatus('en_livraison',this)">En livraison</button>
+      <button class="tab-btn" onclick="filterOrdersStatus('livree',this)">Livrées</button>
+      <button class="tab-btn" onclick="filterOrdersStatus('paiement_recu',this)">Payées</button>
+    </div>
+    <div id="ordersList"><div style="color:var(--text2);text-align:center;padding:36px">Chargement…</div></div>
+  </div>
+
+  <!-- LIVREURS -->
+  <div id="page-livreurs" class="page">
+    <div class="page-header"><div class="page-header-left"><h1>Livreurs</h1><p>Gérer les comptes livreurs</p></div></div>
+    <div class="search-bar">
+      <input type="text" id="livreurSearch" placeholder="Nom ou numéro du livreur…" onkeydown="if(event.key==='Enter')searchLivreurs()">
+      <button class="btn btn-ghost" onclick="searchLivreurs()">🔍</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('livreurSearch').value='';loadLivreursTable()">✕ Tout</button>
+    </div>
     <div class="table-wrap">
-      <table><thead><tr><th>ID</th><th>Produit</th><th>Client</th><th>Prix</th><th>Statut</th><th>Date</th></tr></thead>
-      <tbody id="ordersTableBody"><tr><td colspan="6" style="text-align:center;color:var(--text2);padding:36px">Chargement…</td></tr></tbody></table>
+      <table><thead><tr><th>Nom</th><th>Téléphone</th><th>Dernière position</th><th>Statut</th><th>Actions</th></tr></thead>
+      <tbody id="livreursTableBody"><tr><td colspan="5" style="text-align:center;color:var(--text2);padding:36px">Chargement…</td></tr></tbody></table>
+    </div>
+  </div>
+
+  <!-- QR SCANS -->
+  <div id="page-qrscans" class="page">
+    <div class="page-header"><div class="page-header-left"><h1>Scans QR</h1><p>Journal de sécurité des scans QR Code</p></div></div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Commande</th><th>Scanné par</th><th>Type</th><th>Autorisé</th><th>Date</th></tr></thead>
+      <tbody id="qrScansTableBody"><tr><td colspan="5" style="text-align:center;color:var(--text2);padding:36px">Chargement…</td></tr></tbody></table>
+    </div>
+  </div>
+
+  <!-- GPS -->
+  <div id="page-gps" class="page">
+    <div class="page-header"><div class="page-header-left"><h1>Géolocalisation</h1><p>Dernières positions connues (avec consentement)</p></div></div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Utilisateur</th><th>Rôle</th><th>Latitude</th><th>Longitude</th><th>Date</th></tr></thead>
+      <tbody id="gpsTableBody"><tr><td colspan="5" style="text-align:center;color:var(--text2);padding:36px">Chargement…</td></tr></tbody></table>
     </div>
   </div>
 
@@ -401,7 +441,6 @@ tr:hover td{background:rgba(255,255,255,.018)}
       <div class="form-group"><label>Prix (FCFA)</label><input type="number" class="form-input" id="editPrice"></div>
       <div class="form-group"><label>Stock</label><input type="number" class="form-input" id="editStock"></div>
     </div>
-    <div class="form-group"><label>Lien Wave</label><input type="url" class="form-input" id="editWave"></div>
     <div style="display:flex;gap:10px;margin-top:6px">
       <button class="btn btn-primary" style="flex:1;justify-content:center;border-radius:12px" onclick="saveEdit()">💾 Enregistrer</button>
       <button class="btn btn-ghost" style="border-radius:12px" onclick="closeModal('editModal')">Annuler</button>
