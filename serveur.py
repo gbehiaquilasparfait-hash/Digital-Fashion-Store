@@ -15,7 +15,7 @@ Conformément au cahier des charges v3.0 :
 """
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File, Form, WebSocket, WebSocketDisconnect, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -229,14 +229,16 @@ async def init_db():
                     likes INTEGER DEFAULT 0,
                     is_active BOOLEAN DEFAULT 1,
                     seller_id TEXT REFERENCES users(id),
+                    wave_link TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
-            # Migration products (supprimer wave_link si présente, on l'ignore)
+            # Migration products
             for col, definition in [
                 ("seller_id", "TEXT"),
+                ("wave_link", "TEXT"),
             ]:
                 try:
                     await db.execute(f"ALTER TABLE products ADD COLUMN {col} {definition}")
@@ -491,6 +493,7 @@ class ProductCreate(BaseModel):
     price: float
     stock: int = 0
     category_id: Optional[int] = None
+    wave_link: Optional[str] = None
 
 class ProductUpdate(BaseModel):
     name: Optional[str] = None
@@ -499,6 +502,7 @@ class ProductUpdate(BaseModel):
     stock: Optional[int] = None
     category_id: Optional[int] = None
     is_active: Optional[bool] = None
+    wave_link: Optional[str] = None
 
 class ProductDelete(BaseModel):
     delete_code: str
@@ -686,11 +690,11 @@ async def register(data: UserRegister, db: aiosqlite.Connection = Depends(get_db
 
 @app.post("/api/auth/register-merchant", tags=["Auth"])
 async def register_merchant(
-    phone: str = Query(...),
-    password: str = Query(...),
-    full_name: str = Query(...),
-    birth_date: str = Query(...),
-    store_description: str = Query(...),
+    phone: str = Form(...),
+    password: str = Form(...),
+    full_name: str = Form(...),
+    birth_date: str = Form(...),
+    store_description: str = Form(...),
     id_front: UploadFile = File(...),
     id_back: UploadFile = File(...),
     selfie: UploadFile = File(...),
@@ -966,10 +970,10 @@ async def create_product(
     product_id = str(uuid.uuid4())
     seller_id = None if user["role"] == "admin" else user["id"]
     await db.execute("""
-        INSERT INTO products (id, name, description, price, stock, category_id, seller_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO products (id, name, description, price, stock, category_id, seller_id, wave_link)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (product_id, product.name, product.description, product.price,
-          product.stock, product.category_id, seller_id))
+          product.stock, product.category_id, seller_id, product.wave_link))
     await db.commit()
     cursor = await db.execute("""
         SELECT p.*, c.name as category_name FROM products p
@@ -1006,7 +1010,7 @@ async def update_product(
         raise HTTPException(status_code=403, detail="Vous ne pouvez modifier que vos propres produits")
 
     updates = {}
-    for field in ["name", "description", "price", "stock", "category_id", "is_active"]:
+    for field in ["name", "description", "price", "stock", "category_id", "is_active", "wave_link"]:
         val = getattr(product, field)
         if val is not None:
             updates[field] = val
