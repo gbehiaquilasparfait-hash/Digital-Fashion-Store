@@ -332,8 +332,10 @@ tr:hover td{background:rgba(255,255,255,.018)}
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script>
-const API = 'https://web-production-94add.up.railway.app/api';
-const WS_URL = 'wss://web-production-94add.up.railway.app/ws';
+const BASE_ORIGIN = window.location.origin;
+const API = BASE_ORIGIN + '/api';
+const BASE_URL = BASE_ORIGIN;
+const WS_URL = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws';
 
 let token = localStorage.getItem('dfs_livreur_token');
 let currentUser = JSON.parse(localStorage.getItem('dfs_livreur_user')||'null');
@@ -740,3 +742,4 @@ function toast(msg,type='info'){
 </script>
 </body>
 </html>
+
