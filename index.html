@@ -434,7 +434,7 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:60px 40p
 </div>
 
 <!-- MODAL QR CODE -->
-<div class="modal-overlay" id="qrModal" onclick="closeOnOverlay(event,'qrModal')">
+<div class="modal-overlay" id="qrModal">
   <div class="qr-modal">
     <h2 style="font-family:var(--font-display);margin-bottom:6px">🎉 Commande validée !</h2>
     <p id="qrOrderNum" style="color:var(--accent);font-weight:700;font-size:1.1rem;margin:8px 0"></p>
@@ -498,8 +498,10 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:60px 40p
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
-const API = 'https://web-production-94add.up.railway.app/api';
-const WS_URL = 'wss://web-production-94add.up.railway.app/ws';
+const BASE_ORIGIN = window.location.origin;
+const API = BASE_ORIGIN + '/api';
+const BASE_URL = BASE_ORIGIN;
+const WS_URL = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws';
 
 let token = localStorage.getItem('dfs_token');
 let currentUser = null;
@@ -667,7 +669,7 @@ function renderProducts(products,reset=false){
   const grid=document.getElementById('productsGrid');
   if(reset) grid.innerHTML='';
   if(!products||(!products.length&&reset)){grid.innerHTML='<div class="empty-state"><div class="empty-icon">🛍️</div><h3>Aucun produit trouvé</h3></div>';return;}
-  const baseUrl='https://web-production-94add.up.railway.app';
+  const baseUrl=BASE_URL;
   products.forEach((p,idx)=>{
     const card=document.createElement('div'); card.className='product-card';
     card.style.animation=`fadeUp 0.5s ${idx*0.05}s ease both`;
@@ -720,7 +722,7 @@ async function openProductModal(e,productId){
   const stockEl=document.getElementById('modalStock');
   if(product.stock>0){stockEl.textContent=`✅ ${product.stock} en stock`;stockEl.className='modal-stock in';}
   else{stockEl.textContent='❌ Rupture de stock';stockEl.className='modal-stock out';}
-  const baseUrl='https://web-production-94add.up.railway.app';
+  const baseUrl=BASE_URL;
   const imgContainer=document.getElementById('modalImages');
   const mainImg=product.main_image||(product.images&&product.images.length?product.images[0].image_path:null);
   imgContainer.innerHTML=mainImg
@@ -816,7 +818,7 @@ function renderCart(){
     content.innerHTML='<div class="empty-state"><div class="empty-icon">🛒</div><h3>Panier vide</h3><p>Ajoutez des produits à votre panier</p></div>';
     footer.style.display='none'; return;
   }
-  const baseUrl='https://web-production-94add.up.railway.app';
+  const baseUrl=BASE_URL;
   content.innerHTML=cartData.items.map(item=>`
     <div class="cart-item">
       <div class="cart-item-img">
@@ -971,10 +973,32 @@ async function loadOrders(){
             </div>`;
           }).join('')}
         </div>`:''}
-        ${canCancel?`<button onclick="cancelOrder('${o.id}')" style="margin-top:10px;background:rgba(232,92,92,.12);color:var(--red);border:1px solid rgba(232,92,92,.25);border-radius:8px;padding:6px 14px;cursor:pointer;font-size:.8rem;font-family:var(--font-body)">❌ Annuler</button>`:''}
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          ${o.qr_code_data && !o.qr_used ? `<button onclick="showOrderQR('${o.id}')" style="flex:1;background:rgba(92,154,232,.12);color:var(--blue);border:1px solid rgba(92,154,232,.25);border-radius:8px;padding:8px 14px;cursor:pointer;font-size:.82rem;font-family:var(--font-body);font-weight:600">📱 Mon QR Code</button>` : ''}
+          ${o.qr_used ? `<div style="flex:1;text-align:center;padding:8px 14px;background:rgba(76,175,80,.1);color:var(--green);border:1px solid rgba(76,175,80,.25);border-radius:8px;font-size:.82rem;font-weight:600">✅ QR utilisé — livraison confirmée</div>` : ''}
+          ${canCancel?`<button onclick="cancelOrder('${o.id}')" style="flex:1;background:rgba(232,92,92,.12);color:var(--red);border:1px solid rgba(232,92,92,.25);border-radius:8px;padding:8px 14px;cursor:pointer;font-size:.82rem;font-family:var(--font-body)">❌ Annuler</button>`:''}
+        </div>
       </div>`;
     }).join('');
   }catch(e){document.getElementById('ordersList').innerHTML='<div style="color:var(--text2);text-align:center;padding:40px">Erreur de chargement</div>';}
+}
+
+async function showOrderQR(orderId){
+  // Retrouver la commande dans la liste déjà chargée (pas de nouvel appel réseau)
+  try{
+    const res=await fetch(`${API}/orders/${orderId}`,{headers:{Authorization:`Bearer ${token}`}});
+    if(!res.ok){toast('Impossible de charger le QR','error');return;}
+    const o=await res.json();
+    if(!o.qr_code_data){toast('QR code non disponible','error');return;}
+    if(o.qr_used){toast('Ce QR a déjà été scanné — commande livrée ✅','info');return;}
+    document.getElementById('qrOrderNum').textContent=`Commande #${o.order_number}`;
+    document.getElementById('qrStatus').textContent=`Total : ${formatPrice(o.total_price)} FCFA · Montrez ce code au livreur`;
+    const box=document.getElementById('qrBox');
+    box.innerHTML='';
+    try{new QRCode(box,{text:o.qr_code_data,width:220,height:220,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.H});}
+    catch(e){box.textContent=o.qr_code_data;}
+    document.getElementById('qrModal').classList.add('open');
+  }catch(e){toast('Erreur réseau','error');}
 }
 
 async function cancelOrder(orderId){
@@ -1049,7 +1073,7 @@ async function doSearch(q){
 
 function renderSearchResults(products,q){
   const container=document.getElementById('searchResults');
-  const baseUrl='https://web-production-94add.up.railway.app';
+  const baseUrl=BASE_URL;
   if(!products.length){container.innerHTML=`<div style="padding:16px;color:var(--text2);font-size:.9rem">Aucun résultat pour "${q}"</div>`;container.classList.add('show');return;}
   container.innerHTML=products.map(p=>`
     <div class="sri" onclick="openProductModal(null,'${p.id}')">
@@ -1122,4 +1146,5 @@ function toast(msg,type='info'){
 </script>
 </body>
 </html>
+
 
