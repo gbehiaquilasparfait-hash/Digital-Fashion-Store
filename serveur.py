@@ -735,13 +735,21 @@ async def register_merchant(
           store_description))
     await db.commit()
 
+    base_url = os.getenv("RAILWAY_STATIC_URL", "").rstrip("/")
+    if not base_url:
+        base_url = os.getenv("RAILWAY_PUBLIC_DOMAIN", "")
+        if base_url:
+            base_url = f"https://{base_url}"
     await manager.send_to_admins({
         "event": "new_merchant",
         "data": {
             "id": user_id, "phone": phone, "full_name": full_name,
             "store_description": store_description,
-            "kyc_front": kyc_paths["front"], "kyc_back": kyc_paths["back"],
-            "kyc_selfie": kyc_paths["selfie"],
+            "kyc_front_url": f"{base_url}/{kyc_paths['front']}" if base_url else kyc_paths["front"],
+            "kyc_back_url": f"{base_url}/{kyc_paths['back']}" if base_url else kyc_paths["back"],
+            "kyc_selfie_url": f"{base_url}/{kyc_paths['selfie']}" if base_url else kyc_paths["selfie"],
+            "temp_code": temp_code,
+            "birth_date": birth_date,
             "created_at": datetime.utcnow().isoformat()
         }
     })
@@ -1743,9 +1751,16 @@ async def merchant_stats(user=Depends(get_merchant_or_admin), db: aiosqlite.Conn
     orders = (await (await db.execute(
         "SELECT COUNT(*), COALESCE(SUM(total_price),0) FROM orders WHERE seller_id=?", (user["id"],)
     )).fetchone())
+    pending = (await (await db.execute(
+        "SELECT COUNT(*) FROM orders WHERE seller_id=? AND status IN ('validee','attente_livreur')", (user["id"],)
+    )).fetchone())[0]
+    delivered = (await (await db.execute(
+        "SELECT COUNT(*) FROM orders WHERE seller_id=? AND status IN ('livree','paiement_recu')", (user["id"],)
+    )).fetchone())[0]
     return {
         "products": prod, "total_likes": likes, "total_views": views,
-        "total_orders": orders[0], "total_revenue": orders[1]
+        "total_orders": orders[0], "total_revenue": orders[1],
+        "pending_orders": pending, "delivered_orders": delivered
     }
 
 # ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
@@ -2043,6 +2058,106 @@ async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = None, 
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket, user_id=user_id, is_admin=admin)
+
+
+# ─── MARCHAND : détail commande ───────────────────────────────────────────────
+@app.get("/api/merchant/orders/{order_id}", tags=["Marchand"])
+async def merchant_order_detail(order_id: str, user=Depends(get_merchant_or_admin), db: aiosqlite.Connection = Depends(get_db)):
+    cursor = await db.execute("""
+        SELECT o.*, oa.livreur_id, oa.attributed_at,
+               uc.full_name as client_name, uc.phone as client_phone,
+               ul.full_name as livreur_name, ul.phone as livreur_phone
+        FROM orders o
+        LEFT JOIN order_attributions oa ON o.id = oa.order_id
+        LEFT JOIN users uc ON o.user_id = uc.id
+        LEFT JOIN users ul ON oa.livreur_id = ul.id
+        WHERE o.id=? AND o.seller_id=?
+    """, (order_id, user["id"]))
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Commande introuvable")
+    o = dict(row)
+    items_cursor = await db.execute(
+        "SELECT oi.*, p.name as product_name FROM order_items oi LEFT JOIN products p ON oi.product_id=p.id WHERE oi.order_id=?",
+        (order_id,)
+    )
+    o["items"] = [dict(i) for i in await items_cursor.fetchall()]
+    o["client"] = {
+        "full_name": o.pop("client_name", None),
+        "phone": o.pop("client_phone", None),
+        "address": o.get("client_address"),
+        "neighborhood": o.get("client_quartier"),
+        "city": o.get("client_ville"),
+        "landmark": o.get("client_repere"),
+    }
+    if o.get("livreur_name"):
+        o["deliverer"] = {
+            "full_name": o.pop("livreur_name", None),
+            "phone": o.pop("livreur_phone", None),
+            "id": o.pop("livreur_id", None),
+        }
+    else:
+        o.pop("livreur_name", None); o.pop("livreur_phone", None); o.pop("livreur_id", None)
+        o["deliverer"] = None
+    return o
+
+# ─── MARCHAND : récupérer QR code ─────────────────────────────────────────────
+@app.get("/api/merchant/orders/{order_id}/qr", tags=["Marchand"])
+async def merchant_order_qr(order_id: str, user=Depends(get_merchant_or_admin), db: aiosqlite.Connection = Depends(get_db)):
+    cursor = await db.execute("SELECT * FROM orders WHERE id=? AND seller_id=?", (order_id, user["id"]))
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Commande introuvable")
+    o = dict(row)
+    if not o.get("qr_code_data"):
+        raise HTTPException(status_code=404, detail="QR code non disponible pour cette commande")
+    return {"qr_data": o["qr_code_data"], "order_number": o["order_number"]}
+
+# ─── MARCHAND : confirmer remise de la commande au livreur ────────────────────
+@app.post("/api/merchant/orders/{order_id}/confirm-handoff", tags=["Marchand"])
+async def confirm_handoff(order_id: str, user=Depends(get_merchant_or_admin), db: aiosqlite.Connection = Depends(get_db)):
+    """Le marchand confirme qu'il a remis la commande au livreur (alternative au scan QR)"""
+    cursor = await db.execute("SELECT * FROM orders WHERE id=? AND seller_id=?", (order_id, user["id"]))
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Commande introuvable")
+    o = dict(row)
+    if o["status"] not in ("attente_livreur", "validee"):
+        raise HTTPException(status_code=400, detail=f"Statut actuel '{o['status']}' ne permet pas cette action")
+
+    # Récupérer le livreur assigné
+    cursor = await db.execute("SELECT * FROM order_attributions WHERE order_id=?", (order_id,))
+    attr = await cursor.fetchone()
+    if not attr:
+        raise HTTPException(status_code=400, detail="Aucun livreur assigné à cette commande")
+    attr_dict = dict(attr)
+
+    await db.execute(
+        "UPDATE orders SET status='en_livraison', updated_at=? WHERE id=?",
+        (datetime.utcnow().isoformat(), order_id)
+    )
+    await db.commit()
+
+    # Notifier le livreur, le client et l'admin
+    await notify_user(db, attr_dict["livreur_id"],
+                      "Commande prête 📦",
+                      f"Le marchand a remis la commande #{o['order_number']} — allez la récupérer !",
+                      "mission")
+    await notify_user(db, o["user_id"],
+                      "En cours de livraison 🚚",
+                      f"Votre commande #{o['order_number']} est en route !",
+                      "order")
+    await manager.send_to_admins({
+        "event": "order_status_updated",
+        "data": {"order_id": order_id, "order_number": o["order_number"],
+                 "status": "en_livraison", "updated_by": "merchant"}
+    })
+    await manager.broadcast({
+        "event": "order_status_updated",
+        "data": {"order_id": order_id, "order_number": o["order_number"],
+                 "status": "en_livraison", "status_label": "En cours de livraison"}
+    })
+    return {"message": "Remise confirmée", "new_status": "en_livraison", "order_number": o["order_number"]}
 
 # ─── Pages HTML ───────────────────────────────────────────────────────────────
 @app.get("/admin")
