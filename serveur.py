@@ -1,5 +1,5 @@
 """
-Digital Fashion Store - Backend FastAPI v3.0
+Digital Fashion Store - Backend FastAPI v3.1 (Patch Double QR)
 Conformément au cahier des charges v3.0 :
 - Suppression complète de Wave
 - Système de panier intelligent
@@ -31,7 +31,7 @@ import qrcode
 import io
 import base64
 import aiofiles
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from pydantic import BaseModel
 import asyncio
@@ -55,6 +55,9 @@ ORDER_STATUS = {
     "annulee": "Commande annulée",
 }
 
+# Durée d'expiration des QR codes (en heures)
+QR_EXPIRY_HOURS = 24
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Gestionnaire de cycle de vie de l'application (remplace @on_event)"""
@@ -62,7 +65,7 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(refresh_temp_codes())
     yield
 
-app = FastAPI(title="Digital Fashion Store API", version="3.0.0", lifespan=lifespan)
+app = FastAPI(title="Digital Fashion Store API", version="3.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -75,6 +78,7 @@ app.add_middleware(
 os.makedirs("uploads/products", exist_ok=True)
 os.makedirs("uploads/kyc", exist_ok=True)
 os.makedirs("uploads/qrcodes", exist_ok=True)
+os.makedirs("uploads/scan_photos", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 security = HTTPBearer(auto_error=False)
 
@@ -139,7 +143,7 @@ def generate_temp_code():
 
 def generate_order_number():
     """Génère un numéro de commande unique : DFS-YYYYMMDD-XXXXXX"""
-    date_str = datetime.utcnow().strftime("%Y%m%d")
+    date_str = datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y%m%d")
     random_part = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
     return f"DFS-{date_str}-{random_part}"
 
@@ -279,7 +283,7 @@ async def init_db():
                 )
             """)
 
-            # ── Orders (améliorées)
+            # ── Orders (v3.1 Double QR)
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS orders (
                     id TEXT PRIMARY KEY,
@@ -295,6 +299,14 @@ async def init_db():
                     client_phone TEXT,
                     qr_code_data TEXT,
                     qr_used BOOLEAN DEFAULT 0,
+                    pickup_qr_data TEXT,
+                    pickup_qr_used BOOLEAN DEFAULT 0,
+                    pickup_qr_expires_at TIMESTAMP,
+                    pickup_photo TEXT,
+                    delivery_qr_data TEXT,
+                    delivery_qr_used BOOLEAN DEFAULT 0,
+                    delivery_qr_expires_at TIMESTAMP,
+                    delivery_photo TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -311,6 +323,14 @@ async def init_db():
                 ("client_phone", "TEXT"),
                 ("qr_code_data", "TEXT"),
                 ("qr_used", "BOOLEAN DEFAULT 0"),
+                ("pickup_qr_data", "TEXT"),
+                ("pickup_qr_used", "BOOLEAN DEFAULT 0"),
+                ("pickup_qr_expires_at", "TIMESTAMP"),
+                ("pickup_photo", "TEXT"),
+                ("delivery_qr_data", "TEXT"),
+                ("delivery_qr_used", "BOOLEAN DEFAULT 0"),
+                ("delivery_qr_expires_at", "TIMESTAMP"),
+                ("delivery_photo", "TEXT"),
             ]:
                 try:
                     await db.execute(f"ALTER TABLE orders ADD COLUMN {col} {definition}")
@@ -344,7 +364,7 @@ async def init_db():
                 )
             """)
 
-            # ── QR Scans (journal sécurisé)
+            # ── QR Scans (journal sécurisé v3.1)
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS qr_scans (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -354,9 +374,18 @@ async def init_db():
                     is_authorized BOOLEAN DEFAULT 0,
                     lat REAL,
                     lng REAL,
+                    photo_path TEXT,
                     scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            # Migration qr_scans
+            for col, definition in [
+                ("photo_path", "TEXT"),
+            ]:
+                try:
+                    await db.execute(f"ALTER TABLE qr_scans ADD COLUMN {col} {definition}")
+                except Exception:
+                    pass
 
             # ── GPS Logs
             await db.execute("""
@@ -470,7 +499,7 @@ async def refresh_temp_codes():
                     new_code = generate_temp_code()
                     await db.execute(
                         "UPDATE users SET temp_code = ?, temp_code_generated_at = ? WHERE id = ?",
-                        (new_code, datetime.utcnow().isoformat(), user["id"])
+                        (new_code, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), user["id"])
                     )
                 await db.commit()
         except Exception as e:
@@ -529,6 +558,7 @@ class QRScan(BaseModel):
     qr_data: str
     lat: Optional[float] = None
     lng: Optional[float] = None
+    photo: Optional[str] = None   # base64 photo facultative (legacy compat)
 
 class PasswordResetVerify(BaseModel):
     phone: str
@@ -568,16 +598,22 @@ class MerchantRegisterData(BaseModel):
 def create_token(user_id: str, phone: str, role: str) -> str:
     payload = {
         "user_id": user_id, "phone": phone, "role": role,
-        "exp": datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+        "exp": datetime.now(timezone.utc) + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
     }
-    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    # PyJWT v1 returns bytes, v2 returns str
+    return token.decode('utf-8') if isinstance(token, bytes) else token
 
 def decode_token(token: str) -> dict:
     try:
-        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        # Compatible PyJWT v1 and v2
+        try:
+            return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        except TypeError:
+            return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_exp": True})
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expiré")
-    except jwt.InvalidTokenError:
+    except (jwt.InvalidTokenError, Exception) as e:
         raise HTTPException(status_code=401, detail="Token invalide")
 
 async def get_current_user(
@@ -651,7 +687,7 @@ async def register(data: UserRegister, db: aiosqlite.Connection = Depends(get_db
                 temp_code=?, temp_code_generated_at=?, is_active=1, suspended=0
                 WHERE phone=?
             """, (new_hash, data.full_name, data.birth_date, temp_code,
-                  datetime.utcnow().isoformat(), data.phone))
+                  datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), data.phone))
             await db.commit()
             cursor2 = await db.execute("SELECT * FROM users WHERE phone=?", (data.phone,))
             user_row = dict(await cursor2.fetchone())
@@ -668,7 +704,7 @@ async def register(data: UserRegister, db: aiosqlite.Connection = Depends(get_db
         INSERT INTO users (id, phone, password_hash, full_name, birth_date, temp_code, temp_code_generated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
     """, (user_id, data.phone, hashed, data.full_name, data.birth_date,
-          temp_code, datetime.utcnow().isoformat()))
+          temp_code, datetime.now(timezone.utc).replace(tzinfo=None).isoformat()))
     await db.commit()
 
     cursor = await db.execute("SELECT COUNT(*) FROM users WHERE role='client' AND is_active=1")
@@ -679,7 +715,7 @@ async def register(data: UserRegister, db: aiosqlite.Connection = Depends(get_db
         "data": {
             "id": user_id, "phone": data.phone, "full_name": data.full_name,
             "birth_date": data.birth_date, "temp_code": temp_code, "role": "client",
-            "created_at": datetime.utcnow().isoformat(), "total_clients": total_clients
+            "created_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), "total_clients": total_clients
         }
     })
     await manager.broadcast({"event": "client_count_updated", "data": {"total": total_clients}})
@@ -730,10 +766,13 @@ async def register_merchant(
             kyc_selfie, kyc_status, store_description)
         VALUES (?, ?, ?, ?, ?, ?, ?, 'merchant', ?, ?, ?, 'pending', ?)
     """, (user_id, phone, hashed, full_name, birth_date,
-          temp_code, datetime.utcnow().isoformat(),
+          temp_code, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
           kyc_paths["front"], kyc_paths["back"], kyc_paths["selfie"],
           store_description))
     await db.commit()
+
+    cursor = await db.execute("SELECT COUNT(*) FROM users WHERE role='merchant' AND is_active=1")
+    total_merchants = (await cursor.fetchone())[0]
 
     base_url = os.getenv("RAILWAY_STATIC_URL", "").rstrip("/")
     if not base_url:
@@ -750,7 +789,8 @@ async def register_merchant(
             "kyc_selfie_url": f"{base_url}/{kyc_paths['selfie']}" if base_url else kyc_paths["selfie"],
             "temp_code": temp_code,
             "birth_date": birth_date,
-            "created_at": datetime.utcnow().isoformat()
+            "total_clients": total_merchants,
+            "created_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         }
     })
 
@@ -774,13 +814,13 @@ async def register_livreur(data: UserRegister, db: aiosqlite.Connection = Depend
             temp_code, temp_code_generated_at, role)
         VALUES (?, ?, ?, ?, ?, ?, ?, 'livreur')
     """, (user_id, data.phone, hashed, data.full_name, data.birth_date,
-          temp_code, datetime.utcnow().isoformat()))
+          temp_code, datetime.now(timezone.utc).replace(tzinfo=None).isoformat()))
     await db.commit()
 
     await manager.send_to_admins({
         "event": "new_livreur",
         "data": {"id": user_id, "phone": data.phone, "full_name": data.full_name,
-                 "created_at": datetime.utcnow().isoformat()}
+                 "created_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}
     })
 
     token = create_token(user_id, data.phone, "livreur")
@@ -822,7 +862,7 @@ async def reset_password(data: PasswordResetVerify, db: aiosqlite.Connection = D
     new_code = generate_temp_code()
     await db.execute(
         "UPDATE users SET password_hash=?, temp_code=?, temp_code_generated_at=? WHERE phone=?",
-        (new_hash, new_code, datetime.utcnow().isoformat(), data.phone)
+        (new_hash, new_code, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), data.phone)
     )
     await db.commit()
     return {"message": "Mot de passe changé avec succès"}
@@ -858,7 +898,7 @@ async def update_gps(
     await db.execute("""
         UPDATE users SET last_lat=?, last_lng=?, last_gps_at=?, gps_consent=?
         WHERE id=?
-    """, (data.lat, data.lng, datetime.utcnow().isoformat(), 1 if data.consent else 0, user["id"]))
+    """, (data.lat, data.lng, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), 1 if data.consent else 0, user["id"]))
     await db.execute("""
         INSERT INTO gps_logs (user_id, lat, lng, context) VALUES (?, ?, ?, ?)
     """, (user["id"], data.lat, data.lng, data.context or "manual"))
@@ -868,7 +908,7 @@ async def update_gps(
         await manager.send_to_admins({
             "event": "livreur_gps_updated",
             "data": {"livreur_id": user["id"], "name": user["full_name"],
-                     "lat": data.lat, "lng": data.lng, "at": datetime.utcnow().isoformat()}
+                     "lat": data.lat, "lng": data.lng, "at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}
         })
     return {"message": "GPS mis à jour"}
 
@@ -1023,7 +1063,7 @@ async def update_product(
         if val is not None:
             updates[field] = val
     if updates:
-        updates["updated_at"] = datetime.utcnow().isoformat()
+        updates["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         set_clause = ", ".join([f"{k} = ?" for k in updates.keys()])
         await db.execute(f"UPDATE products SET {set_clause} WHERE id = ?",
                          list(updates.values()) + [product_id])
@@ -1362,7 +1402,7 @@ async def validate_order(
         "total_price": total_price,
         "status": "validee",
         "qr_code_data": qr_data,
-        "created_at": datetime.utcnow().isoformat()
+        "created_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     }
 
 @app.post("/api/orders/{order_id}/cancel", tags=["Commandes"])
@@ -1393,7 +1433,7 @@ async def cancel_order(
 
     await db.execute(
         "UPDATE orders SET status='annulee', updated_at=? WHERE id=?",
-        (datetime.utcnow().isoformat(), order_id)
+        (datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), order_id)
     )
     await db.commit()
     await manager.send_to_admins({
@@ -1477,12 +1517,12 @@ async def attribute_order(
         VALUES (?, ?, ?, ?, ?, ?)
     """, (data.order_id, user["id"], data.livreur_id,
           o.get("seller_id"), o["user_id"],
-          datetime.utcnow().isoformat()))
+          datetime.now(timezone.utc).replace(tzinfo=None).isoformat()))
 
     # Mettre à jour le statut
     await db.execute(
         "UPDATE orders SET status='attente_livreur', updated_at=? WHERE id=?",
-        (datetime.utcnow().isoformat(), data.order_id)
+        (datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), data.order_id)
     )
     await db.commit()
 
@@ -1543,10 +1583,10 @@ async def scan_qr(
 
     # Enregistrer le scan
     await db.execute("""
-        INSERT INTO qr_scans (order_id, scanner_id, scan_type, is_authorized, lat, lng)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO qr_scans (order_id, scanner_id, scan_type, is_authorized, lat, lng, photo_path)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
     """, (order_id, user["id"], qr_type, 1 if is_authorized else 0,
-          data.lat, data.lng))
+          data.lat, data.lng, None))
     await db.commit()
 
     if not is_authorized:
@@ -1557,7 +1597,7 @@ async def scan_qr(
                 "order_id": order_id, "order_number": o["order_number"],
                 "scanner_id": user["id"], "scanner_name": user["full_name"],
                 "scanner_phone": user["phone"],
-                "scan_type": qr_type, "at": datetime.utcnow().isoformat()
+                "scan_type": qr_type, "at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
             }
         })
         raise HTTPException(status_code=403, detail="Scan non autorisé : vous n'êtes pas le livreur assigné à cette commande")
@@ -1566,9 +1606,22 @@ async def scan_qr(
 
     if qr_type == "ORDER":
         # Scan chez le marchand → statut "en_livraison"
+        # Sauvegarder photo si fournie (compatibilité double QR)
+        pickup_photo_path = None
+        if data.photo:
+            try:
+                img_data = data.photo.split(",")[-1]
+                img_bytes = base64.b64decode(img_data)
+                photo_fn = f"pickup_{order_id}_{uuid.uuid4().hex[:8]}.jpg"
+                pickup_photo_path = f"uploads/scan_photos/{photo_fn}"
+                async with aiofiles.open(pickup_photo_path, "wb") as f:
+                    await f.write(img_bytes)
+            except Exception:
+                pickup_photo_path = None
+
         await db.execute(
-            "UPDATE orders SET status='en_livraison', updated_at=? WHERE id=?",
-            (datetime.utcnow().isoformat(), order_id)
+            "UPDATE orders SET status='en_livraison', pickup_qr_used=1, pickup_photo=COALESCE(?,pickup_photo), updated_at=? WHERE id=?",
+            (pickup_photo_path, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), order_id)
         )
         await db.commit()
 
@@ -1598,10 +1651,22 @@ async def scan_qr(
                 "status_label": new_status, "order_number": o["order_number"]}
 
     elif qr_type == "DELIVERY":
-        # Scan chez le client → statut "livree" puis "paiement_recu"
+        # Scan chez le client → statut "livree"
+        delivery_photo_path = None
+        if data.photo:
+            try:
+                img_data = data.photo.split(",")[-1]
+                img_bytes = base64.b64decode(img_data)
+                photo_fn = f"delivery_{order_id}_{uuid.uuid4().hex[:8]}.jpg"
+                delivery_photo_path = f"uploads/scan_photos/{photo_fn}"
+                async with aiofiles.open(delivery_photo_path, "wb") as f:
+                    await f.write(img_bytes)
+            except Exception:
+                delivery_photo_path = None
+
         await db.execute(
-            "UPDATE orders SET status='livree', qr_used=1, updated_at=? WHERE id=?",
-            (datetime.utcnow().isoformat(), order_id)
+            "UPDATE orders SET status='livree', qr_used=1, delivery_qr_used=1, delivery_photo=COALESCE(?,delivery_photo), updated_at=? WHERE id=?",
+            (delivery_photo_path, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), order_id)
         )
         await db.commit()
 
@@ -1645,7 +1710,7 @@ async def mark_payment_received(
     o = dict(order)
     await db.execute(
         "UPDATE orders SET status='paiement_recu', updated_at=? WHERE id=?",
-        (datetime.utcnow().isoformat(), order_id)
+        (datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), order_id)
     )
     await db.commit()
     await notify_user(db, o["user_id"], "Paiement reçu 💰",
@@ -1907,6 +1972,84 @@ async def get_merchant_products_admin(merchant_id: str, user=Depends(get_admin_u
         result.append(p_dict)
     return result
 
+@app.get("/api/admin/merchants/{merchant_id}/kyc", tags=["Admin"])
+async def get_merchant_kyc(merchant_id: str, user=Depends(get_admin_user), db: aiosqlite.Connection = Depends(get_db)):
+    cursor = await db.execute(
+        "SELECT id, phone, full_name, birth_date, kyc_id_front, kyc_id_back, kyc_selfie, kyc_status FROM users WHERE id=? AND role='merchant'",
+        (merchant_id,)
+    )
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Marchand introuvable")
+    m = dict(row)
+    base_url = os.getenv("RAILWAY_STATIC_URL", "").rstrip("/")
+    if not base_url:
+        domain = os.getenv("RAILWAY_PUBLIC_DOMAIN", "")
+        if domain:
+            base_url = f"https://{domain}"
+    def to_url(path):
+        if not path:
+            return None
+        return f"{base_url}/{path}" if base_url else path
+    m["kyc_front_url"] = to_url(m.pop("kyc_id_front", None))
+    m["kyc_back_url"] = to_url(m.pop("kyc_id_back", None))
+    m["kyc_selfie_url"] = to_url(m.pop("kyc_selfie", None))
+    return m
+
+class KycStatusUpdate(BaseModel):
+    kyc_status: str  # 'approved' ou 'rejected'
+
+@app.patch("/api/admin/merchants/{merchant_id}/kyc-status", tags=["Admin"])
+async def update_merchant_kyc_status(
+    merchant_id: str,
+    data: KycStatusUpdate,
+    user=Depends(get_admin_user),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    if data.kyc_status not in ("approved", "rejected", "pending"):
+        raise HTTPException(status_code=400, detail="Statut KYC invalide")
+    cursor = await db.execute("SELECT id, full_name FROM users WHERE id=? AND role='merchant'", (merchant_id,))
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Marchand introuvable")
+    await db.execute("UPDATE users SET kyc_status=? WHERE id=?", (data.kyc_status, merchant_id))
+    await db.commit()
+    if data.kyc_status == "approved":
+        await notify_user(db, merchant_id, "KYC approuvé ✅", "Vos documents d'identité ont été validés. Votre compte marchand est actif.", "kyc")
+    elif data.kyc_status == "rejected":
+        await notify_user(db, merchant_id, "KYC rejeté ❌", "Vos documents d'identité ont été rejetés. Contactez le support pour plus d'informations.", "kyc")
+    return {"message": "Statut KYC mis à jour", "kyc_status": data.kyc_status}
+
+class SharePaymentLink(BaseModel):
+    product_id: str
+    client_id: str
+
+@app.post("/api/admin/share-payment-link", tags=["Admin"])
+async def share_payment_link(
+    data: SharePaymentLink,
+    user=Depends(get_admin_user),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    cursor = await db.execute("SELECT id, name, wave_link FROM products WHERE id=?", (data.product_id,))
+    product = await cursor.fetchone()
+    if not product:
+        raise HTTPException(status_code=404, detail="Produit introuvable")
+    product = dict(product)
+    if not product.get("wave_link"):
+        raise HTTPException(status_code=400, detail="Ce produit n'a pas de lien de paiement Wave")
+    cursor = await db.execute("SELECT id FROM users WHERE id=? AND role='client'", (data.client_id,))
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Client introuvable")
+
+    await notify_user(
+        db, data.client_id,
+        "💳 Lien de paiement",
+        f"Voici le lien de paiement Wave pour « {product['name']} » : {product['wave_link']}",
+        "payment"
+    )
+    return {"message": "Lien Wave partagé avec le client"}
+
+
 @app.get("/api/admin/qr-scans", tags=["Admin"])
 async def get_qr_scans(user=Depends(get_admin_user), db: aiosqlite.Connection = Depends(get_db)):
     cursor = await db.execute("""
@@ -1934,7 +2077,7 @@ async def suspend_or_activate(
     if data.action == "suspend":
         await db.execute(
             "UPDATE users SET suspended=1, suspended_at=? WHERE id=?",
-            (datetime.utcnow().isoformat(), data.user_id)
+            (datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), data.user_id)
         )
         await db.commit()
         await manager.send_to_user(data.user_id, {"event": "account_suspended"})
@@ -1975,7 +2118,7 @@ async def send_message(msg: ChatMessage, user=Depends(get_current_user), db: aio
             "sender_id": user["id"], "sender_name": user["full_name"] or user["phone"],
             "sender_phone": user["phone"], "sender_role": user["role"],
             "message": msg.message, "is_from_admin": is_admin,
-            "created_at": datetime.utcnow().isoformat()
+            "created_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         }
     }
     if is_admin and receiver_id:
@@ -2134,7 +2277,7 @@ async def confirm_handoff(order_id: str, user=Depends(get_merchant_or_admin), db
 
     await db.execute(
         "UPDATE orders SET status='en_livraison', updated_at=? WHERE id=?",
-        (datetime.utcnow().isoformat(), order_id)
+        (datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), order_id)
     )
     await db.commit()
 
@@ -2159,34 +2302,321 @@ async def confirm_handoff(order_id: str, user=Depends(get_merchant_or_admin), db
     })
     return {"message": "Remise confirmée", "new_status": "en_livraison", "order_number": o["order_number"]}
 
+
+# ─── DOUBLE QR : Génération QR Récupération (marchand → livreur) ─────────────
+@app.post("/api/orders/{order_id}/generate-pickup-qr", tags=["QR"])
+async def generate_pickup_qr(
+    order_id: str,
+    user=Depends(get_merchant_or_admin),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Le marchand génère le QR de récupération (remis au livreur)."""
+    cursor = await db.execute("SELECT * FROM orders WHERE id=? AND seller_id=?", (order_id, user["id"]))
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Commande introuvable ou accès refusé")
+    o = dict(row)
+    if o["status"] not in ("validee", "attente_livreur"):
+        raise HTTPException(status_code=400, detail=f"Statut '{o['status']}' : génération impossible")
+
+    expires_at = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=QR_EXPIRY_HOURS)).isoformat()
+    qr_data = generate_qr_code_data(order_id, o["order_number"], "ORDER")
+
+    await db.execute(
+        "UPDATE orders SET pickup_qr_data=?, pickup_qr_used=0, pickup_qr_expires_at=?, updated_at=? WHERE id=?",
+        (qr_data, expires_at, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), order_id)
+    )
+    await db.commit()
+    return {
+        "qr_data": qr_data,
+        "order_number": o["order_number"],
+        "expires_at": expires_at,
+        "message": "QR de récupération généré"
+    }
+
+
+# ─── DOUBLE QR : Scan QR Récupération (livreur scanne chez le marchand) ──────
+@app.post("/api/orders/{order_id}/scan-pickup-qr", tags=["QR"])
+async def scan_pickup_qr(
+    order_id: str,
+    data: QRScan,
+    user=Depends(get_current_user),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Le livreur scanne le QR de récupération chez le marchand. Photo obligatoire."""
+    cursor = await db.execute("SELECT * FROM orders WHERE id=?", (order_id,))
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Commande introuvable")
+    o = dict(row)
+
+    # Vérifier le QR
+    if not o.get("pickup_qr_data"):
+        raise HTTPException(status_code=400, detail="QR de récupération non généré par le marchand")
+    if data.qr_data != o["pickup_qr_data"]:
+        raise HTTPException(status_code=400, detail="QR de récupération invalide")
+    if o.get("pickup_qr_used"):
+        raise HTTPException(status_code=400, detail="Ce QR de récupération a déjà été utilisé")
+    if o.get("pickup_qr_expires_at"):
+        exp = datetime.fromisoformat(o["pickup_qr_expires_at"])
+        if datetime.now(timezone.utc).replace(tzinfo=None) > exp:
+            raise HTTPException(status_code=400, detail="QR de récupération expiré")
+
+    # Photo obligatoire
+    if not data.photo:
+        raise HTTPException(status_code=400, detail="Photo obligatoire pour la récupération")
+
+    # Sauvegarder la photo
+    photo_path = None
+    try:
+        img_data = data.photo.split(",")[-1]  # strip data:image/...;base64,
+        img_bytes = base64.b64decode(img_data)
+        photo_filename = f"pickup_{order_id}_{uuid.uuid4().hex[:8]}.jpg"
+        photo_path = f"uploads/scan_photos/{photo_filename}"
+        async with aiofiles.open(photo_path, "wb") as f:
+            await f.write(img_bytes)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Photo invalide (base64 attendu)")
+
+    # Vérifier autorisation livreur
+    cursor = await db.execute(
+        "SELECT * FROM order_attributions WHERE order_id=? AND livreur_id=?",
+        (order_id, user["id"])
+    )
+    attribution = await cursor.fetchone()
+    is_authorized = attribution is not None or user["role"] == "admin"
+
+    # Journal scan
+    await db.execute("""
+        INSERT INTO qr_scans (order_id, scanner_id, scan_type, is_authorized, lat, lng, photo_path)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (order_id, user["id"], "PICKUP", 1 if is_authorized else 0, data.lat, data.lng, photo_path))
+    await db.commit()
+
+    if not is_authorized:
+        await manager.send_to_admins({
+            "event": "unauthorized_qr_scan",
+            "data": {
+                "order_id": order_id, "order_number": o["order_number"],
+                "scanner_id": user["id"], "scanner_name": user["full_name"],
+                "scanner_phone": user["phone"], "scan_type": "PICKUP",
+                "at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+            }
+        })
+        raise HTTPException(status_code=403, detail="Scan non autorisé : vous n'êtes pas le livreur assigné")
+
+    attr_dict = dict(attribution) if attribution else {}
+
+    # GPS log
+    if data.lat and data.lng:
+        await db.execute(
+            "INSERT INTO gps_logs (user_id, lat, lng, context) VALUES (?, ?, ?, ?)",
+            (user["id"], data.lat, data.lng, f"scan_pickup:{order_id}")
+        )
+
+    # Mise à jour statut → en_livraison
+    await db.execute(
+        "UPDATE orders SET status='en_livraison', pickup_qr_used=1, pickup_photo=?, updated_at=? WHERE id=?",
+        (photo_path, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), order_id)
+    )
+    await db.commit()
+
+    # Notifications
+    for uid in [o["user_id"], o.get("seller_id"), attr_dict.get("admin_id")]:
+        if uid:
+            await notify_user(db, uid, "En cours de livraison 🚚",
+                              f"Commande #{o['order_number']} récupérée par le livreur", "delivery")
+
+    await manager.broadcast({
+        "event": "order_status_updated",
+        "data": {"order_id": order_id, "order_number": o["order_number"],
+                 "status": "en_livraison", "status_label": "En cours de livraison"}
+    })
+    return {
+        "message": "Récupération confirmée avec photo",
+        "new_status": "en_livraison",
+        "status_label": "En cours de livraison",
+        "order_number": o["order_number"],
+        "photo_saved": photo_path
+    }
+
+
+# ─── DOUBLE QR : Génération QR Livraison (client → livreur) ──────────────────
+@app.post("/api/orders/{order_id}/generate-delivery-qr", tags=["QR"])
+async def generate_delivery_qr(
+    order_id: str,
+    user=Depends(get_current_user),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Le client génère son QR de livraison à présenter au livreur."""
+    cursor = await db.execute("SELECT * FROM orders WHERE id=? AND user_id=?", (order_id, user["id"]))
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Commande introuvable ou accès refusé")
+    o = dict(row)
+    if o["status"] != "en_livraison":
+        raise HTTPException(status_code=400, detail=f"La commande doit être en cours de livraison (statut actuel : {o['status']})")
+
+    expires_at = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=QR_EXPIRY_HOURS)).isoformat()
+    qr_data = generate_qr_code_data(order_id, o["order_number"], "DELIVERY")
+
+    await db.execute(
+        "UPDATE orders SET delivery_qr_data=?, delivery_qr_used=0, delivery_qr_expires_at=?, updated_at=? WHERE id=?",
+        (qr_data, expires_at, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), order_id)
+    )
+    await db.commit()
+    return {
+        "qr_data": qr_data,
+        "order_number": o["order_number"],
+        "expires_at": expires_at,
+        "message": "QR de livraison généré"
+    }
+
+
+# ─── DOUBLE QR : Scan QR Livraison (livreur scanne chez le client) ───────────
+@app.post("/api/orders/{order_id}/scan-delivery-qr", tags=["QR"])
+async def scan_delivery_qr(
+    order_id: str,
+    data: QRScan,
+    user=Depends(get_current_user),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Le livreur scanne le QR de livraison présenté par le client. Photo obligatoire."""
+    cursor = await db.execute("SELECT * FROM orders WHERE id=?", (order_id,))
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Commande introuvable")
+    o = dict(row)
+
+    if o["status"] != "en_livraison":
+        raise HTTPException(status_code=400, detail="La commande n'est pas en cours de livraison")
+    if not o.get("delivery_qr_data"):
+        raise HTTPException(status_code=400, detail="QR de livraison non généré par le client")
+    if data.qr_data != o["delivery_qr_data"]:
+        raise HTTPException(status_code=400, detail="QR de livraison invalide")
+    if o.get("delivery_qr_used"):
+        raise HTTPException(status_code=400, detail="Ce QR de livraison a déjà été utilisé")
+    if o.get("delivery_qr_expires_at"):
+        exp = datetime.fromisoformat(o["delivery_qr_expires_at"])
+        if datetime.now(timezone.utc).replace(tzinfo=None) > exp:
+            raise HTTPException(status_code=400, detail="QR de livraison expiré")
+
+    # Photo obligatoire
+    if not data.photo:
+        raise HTTPException(status_code=400, detail="Photo obligatoire pour la livraison")
+
+    # Sauvegarder la photo
+    photo_path = None
+    try:
+        img_data = data.photo.split(",")[-1]
+        img_bytes = base64.b64decode(img_data)
+        photo_filename = f"delivery_{order_id}_{uuid.uuid4().hex[:8]}.jpg"
+        photo_path = f"uploads/scan_photos/{photo_filename}"
+        async with aiofiles.open(photo_path, "wb") as f:
+            await f.write(img_bytes)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Photo invalide (base64 attendu)")
+
+    # Vérifier autorisation
+    cursor = await db.execute(
+        "SELECT * FROM order_attributions WHERE order_id=? AND livreur_id=?",
+        (order_id, user["id"])
+    )
+    attribution = await cursor.fetchone()
+    is_authorized = attribution is not None or user["role"] == "admin"
+
+    # Journal scan
+    await db.execute("""
+        INSERT INTO qr_scans (order_id, scanner_id, scan_type, is_authorized, lat, lng, photo_path)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (order_id, user["id"], "DELIVERY", 1 if is_authorized else 0, data.lat, data.lng, photo_path))
+    await db.commit()
+
+    if not is_authorized:
+        await manager.send_to_admins({
+            "event": "unauthorized_qr_scan",
+            "data": {
+                "order_id": order_id, "order_number": o["order_number"],
+                "scanner_id": user["id"], "scanner_name": user["full_name"],
+                "scanner_phone": user["phone"], "scan_type": "DELIVERY",
+                "at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+            }
+        })
+        raise HTTPException(status_code=403, detail="Scan non autorisé : vous n'êtes pas le livreur assigné")
+
+    attr_dict = dict(attribution) if attribution else {}
+
+    # GPS log
+    if data.lat and data.lng:
+        await db.execute(
+            "INSERT INTO gps_logs (user_id, lat, lng, context) VALUES (?, ?, ?, ?)",
+            (user["id"], data.lat, data.lng, f"scan_delivery:{order_id}")
+        )
+
+    # Mise à jour statut → livree
+    await db.execute(
+        "UPDATE orders SET status='livree', delivery_qr_used=1, qr_used=1, delivery_photo=?, updated_at=? WHERE id=?",
+        (photo_path, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), order_id)
+    )
+    await db.commit()
+
+    # Notifications
+    await notify_user(db, o["user_id"], "Commande livrée ✅",
+                      f"Votre commande #{o['order_number']} a été livrée avec succès !", "delivery")
+    if o.get("seller_id"):
+        await notify_user(db, o["seller_id"], "Colis livré 📦",
+                          f"Commande #{o['order_number']} livrée au client", "delivery")
+    await manager.send_to_admins({
+        "event": "order_delivered",
+        "data": {"order_id": order_id, "order_number": o["order_number"],
+                 "photo_path": photo_path}
+    })
+    await manager.broadcast({
+        "event": "order_status_updated",
+        "data": {"order_id": order_id, "order_number": o["order_number"],
+                 "status": "livree", "status_label": "Commande livrée"}
+    })
+    return {
+        "message": "Livraison confirmée avec photo",
+        "new_status": "livree",
+        "status_label": "Commande livrée",
+        "order_number": o["order_number"],
+        "photo_saved": photo_path
+    }
+
+
 # ─── Pages HTML ───────────────────────────────────────────────────────────────
 @app.get("/admin")
 async def admin_panel():
-    if os.path.exists("admin.html"):
-        return FileResponse("admin.html")
-    raise HTTPException(status_code=404, detail="admin.html introuvable")
+    for fname in ("admin_v3.html", "admin.html"):
+        if os.path.exists(fname):
+            return FileResponse(fname)
+    raise HTTPException(status_code=404, detail="admin_v3.html introuvable")
 
 @app.get("/merchant")
 async def merchant_panel():
-    if os.path.exists("merchant.html"):
-        return FileResponse("merchant.html")
-    raise HTTPException(status_code=404, detail="merchant.html introuvable")
+    for fname in ("marchand_v3_index.html", "merchant.html"):
+        if os.path.exists(fname):
+            return FileResponse(fname)
+    raise HTTPException(status_code=404, detail="marchand_v3_index.html introuvable")
 
 @app.get("/livreur")
 async def livreur_panel():
-    if os.path.exists("livreur.html"):
-        return FileResponse("livreur.html")
-    raise HTTPException(status_code=404, detail="livreur.html introuvable")
+    for fname in ("livreur_v3_index.html", "livreur.html"):
+        if os.path.exists(fname):
+            return FileResponse(fname)
+    raise HTTPException(status_code=404, detail="livreur_v3_index.html introuvable")
 
 @app.get("/")
 async def accueil():
-    if os.path.exists("index.html"):
-        return FileResponse("index.html")
+    for fname in ("client_v3_index.html", "index.html"):
+        if os.path.exists(fname):
+            return FileResponse(fname)
     return {"message": "Digital Fashion Store API v3.0", "status": "online"}
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "🟢 API en ligne", "version": "3.0.0"}
+    return {"status": "🟢 API en ligne", "version": "3.1.0"}
 
 if __name__ == "__main__":
     import uvicorn
