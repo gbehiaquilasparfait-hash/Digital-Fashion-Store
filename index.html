@@ -3029,6 +3029,117 @@ tr:hover td{background:rgba(255,255,255,.018)}
 .profile-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--accent2));display:flex;align-items:center;justify-content:center;font-weight:700;color:#0a0a0f;font-size:.85rem}
 .ws-dot{width:8px;height:8px;border-radius:50%;background:var(--text2);transition:background .3s}
 .ws-dot.connected{background:var(--green)}
+
+/* ── MOBILE RESPONSIVE LIVREUR ── */
+@media (max-width: 700px) {
+  /* Cache la sidebar desktop */
+  #appView .sidebar { display: none !important; }
+
+  /* Layout devient une colonne simple */
+  #appView, #appView.layout {
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 100vh;
+    width: 100%;
+  }
+
+  /* Le main prend toute la largeur avec padding bas pour la nav */
+  .main {
+    padding: 16px 14px 80px !important;
+    width: 100%;
+    max-width: 100% !important;
+    overflow-x: hidden;
+  }
+
+  /* Page headers plus compacts */
+  .page-header { margin-bottom: 14px; gap: 8px; }
+  .page-header-left h1 { font-size: 1.25rem; }
+  .page-header-left p { font-size: .8rem; }
+
+  /* Grille de stats 2 colonnes sur mobile */
+  .stat-grid { grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+  .stat-card .stat-val { font-size: 1.35rem; }
+
+  /* Mission cards full width */
+  .mission-grid { grid-template-columns: 1fr; gap: 8px; }
+  .mission-actions { flex-direction: column; }
+  .mission-actions .btn { width: 100%; justify-content: center; }
+
+  /* Tabs scrollables */
+  .tab-bar { width: 100%; overflow-x: auto; flex-wrap: nowrap; }
+
+  /* Scanner centré */
+  .qr-scanner-wrap { padding: 16px; }
+
+  /* Chat hauteur adaptée */
+  .chat-layout { height: calc(100vh - 180px); }
+  .chat-messages-area { max-height: calc(100vh - 320px); }
+
+  /* Table scrollable */
+  .table-wrap { font-size: .78rem; }
+  td, th { padding: 8px 10px; }
+
+  /* Toast en bas à gauche, au-dessus de la nav */
+  .toast-container { bottom: 80px !important; left: 12px !important; right: 12px; }
+  .toast { font-size: .82rem; }
+
+  /* ── BARRE DE NAVIGATION BAS ── */
+  #livreurBottomNav {
+    display: flex !important;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 2000;
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+    padding: 6px 0 env(safe-area-inset-bottom, 6px);
+    gap: 0;
+    justify-content: space-around;
+    align-items: stretch;
+  }
+  .lnav-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 6px 2px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text2);
+    font-family: var(--font-body);
+    font-size: .6rem;
+    font-weight: 500;
+    letter-spacing: .01em;
+    transition: color .2s;
+    position: relative;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .lnav-btn .lnav-icon { font-size: 1.3rem; line-height: 1; }
+  .lnav-btn.active { color: var(--accent); }
+  .lnav-btn.active .lnav-icon { filter: drop-shadow(0 0 6px rgba(201,169,110,.5)); }
+  .lnav-badge {
+    position: absolute;
+    top: 2px; right: calc(50% - 18px);
+    background: var(--red);
+    color: white;
+    font-size: .55rem;
+    font-weight: 700;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* Auth box full width sur mobile */
+  .auth-wrap { padding: 16px; align-items: flex-start; padding-top: 60px; }
+  .auth-box { padding: 28px 20px; max-width: 100%; }
+  .auth-logo { font-size: 1.4rem; }
+}
+
+@media (min-width: 701px) {
+  #livreurBottomNav { display: none !important; }
+}
 </style>
 </head>
 <body>
@@ -3060,6 +3171,33 @@ tr:hover td{background:rgba(255,255,255,.018)}
 
 <!-- APP -->
 <div id="appView" style="display:none" class="layout">
+  <!-- BARRE NAV BAS (mobile uniquement) -->
+  <nav id="livreurBottomNav">
+    <button class="lnav-btn active" id="lnav-dashboard" onclick="navigate(&apos;dashboard&apos;);setLnavActive(&apos;dashboard&apos;)">
+      <span class="lnav-icon">🏠</span>Accueil
+    </button>
+    <button class="lnav-btn" id="lnav-missions" onclick="navigate(&apos;missions&apos;);setLnavActive(&apos;missions&apos;)">
+      <span class="lnav-icon">📋</span>Missions
+      <span class="lnav-badge" id="lnavMissionsCount" style="display:none">0</span>
+    </button>
+    <button class="lnav-btn" id="lnav-scanner" onclick="navigate(&apos;scanner&apos;);setLnavActive(&apos;scanner&apos;)">
+      <span class="lnav-icon">📷</span>Scanner
+    </button>
+    <button class="lnav-btn" id="lnav-chat" onclick="navigate(&apos;chat&apos;);setLnavActive(&apos;chat&apos;)">
+      <span class="lnav-icon">💬</span>Chat
+      <span class="lnav-badge" id="lnavChatBadge" style="display:none">!</span>
+    </button>
+    <button class="lnav-btn" id="lnav-more" onclick="toggleLnavMore()">
+      <span class="lnav-icon">⋯</span>Plus
+    </button>
+  </nav>
+  <!-- MENU "PLUS" mobile -->
+  <div id="lnavMoreMenu" style="display:none;position:fixed;bottom:65px;left:0;right:0;z-index:1999;background:var(--bg2);border-top:1px solid var(--border);padding:12px 16px;flex-direction:column;gap:6px">
+    <button class="nav-item" onclick="navigate(&apos;historique&apos;);hideLnavMore();setLnavActive(&apos;historique&apos;)"><span class="icon">📜</span>Historique</button>
+    <button class="nav-item" onclick="navigate(&apos;gps&apos;);hideLnavMore();setLnavActive(&apos;gps&apos;)"><span class="icon">📍</span>GPS</button>
+    <button class="nav-item" onclick="doLogout()" style="color:var(--red)"><span class="icon">🚪</span>Déconnexion</button>
+  </div>
+
   <!-- SIDEBAR -->
   <div class="sidebar">
     <div class="sidebar-logo">Digital Fashion Store</div>
@@ -3246,7 +3384,7 @@ const STATUS_LABEL = {
 // ── Init ─────────────────────────────────────────────────────────────────────
 if(token && currentUser) {
   document.getElementById(&apos;loginView&apos;).style.display=&apos;none&apos;;
-  document.getElementById(&apos;appView&apos;).style.display=&apos;grid&apos;;
+  document.getElementById(&apos;appView&apos;).style.display=window.innerWidth&lt;=700?&apos;flex&apos;:&apos;grid&apos;;
   initApp();
 }
 
@@ -3254,6 +3392,10 @@ function initApp(){
   updateProfilePill();
   connectWS();
   loadDashboard();
+  window.addEventListener(&apos;resize&apos;,()=>{
+    const av=document.getElementById(&apos;appView&apos;);
+    if(av&&av.style.display!==&apos;none&apos;)av.style.display=window.innerWidth<=700?&apos;flex&apos;:&apos;grid&apos;;
+  });
 }
 
 function showPanel(show,hide){
@@ -3276,7 +3418,7 @@ async function doLogin(){
       localStorage.setItem(&apos;dfs_livreur_token&apos;,token);
       localStorage.setItem(&apos;dfs_livreur_user&apos;,JSON.stringify(currentUser));
       document.getElementById(&apos;loginView&apos;).style.display=&apos;none&apos;;
-      document.getElementById(&apos;appView&apos;).style.display=&apos;grid&apos;;
+      document.getElementById(&apos;appView&apos;).style.display=window.innerWidth&lt;=700?&apos;flex&apos;:&apos;grid&apos;;
       initApp();
     } else {
       if(data.detail===&apos;ACCOUNT_SUSPENDED&apos;){errEl.textContent=&apos;Votre compte est suspendu. Contactez l\&apos;admin.&apos;;errEl.classList.add(&apos;show&apos;);return;}
@@ -3303,7 +3445,7 @@ async function doRegister(){
       localStorage.setItem(&apos;dfs_livreur_token&apos;,token);
       localStorage.setItem(&apos;dfs_livreur_user&apos;,JSON.stringify(currentUser));
       document.getElementById(&apos;loginView&apos;).style.display=&apos;none&apos;;
-      document.getElementById(&apos;appView&apos;).style.display=&apos;grid&apos;;
+      document.getElementById(&apos;appView&apos;).style.display=window.innerWidth&lt;=700?&apos;flex&apos;:&apos;grid&apos;;
       initApp(); toast(&apos;Compte créé ! Bienvenue 🎉&apos;,&apos;success&apos;);
     } else {errEl.textContent=data.detail||&apos;Erreur inscription&apos;;errEl.classList.add(&apos;show&apos;);}
   }catch(e){errEl.textContent=&apos;Serveur inaccessible&apos;;errEl.classList.add(&apos;show&apos;);}
@@ -3344,7 +3486,28 @@ function navigate(page){
   if(page===&apos;gps&apos;) {};
   if(page===&apos;dashboard&apos;) loadDashboard();
   // reset chat badge
-  if(page===&apos;chat&apos;){document.getElementById(&apos;chatBadgeSide&apos;).style.display=&apos;none&apos;;}
+  if(page===&apos;chat&apos;){document.getElementById(&apos;chatBadgeSide&apos;).style.display=&apos;none&apos;;const lb=document.getElementById(&apos;lnavChatBadge&apos;);if(lb)lb.style.display=&apos;none&apos;;}
+  setLnavActive(page);
+  hideLnavMore();
+}
+
+// ── Mobile bottom nav helpers ─────────────────────────────────────────────────
+function setLnavActive(page){
+  document.querySelectorAll(&apos;.lnav-btn&apos;).forEach(b=>b.classList.remove(&apos;active&apos;));
+  const btn=document.getElementById(`lnav-${page}`);
+  if(btn) btn.classList.add(&apos;active&apos;);
+  else { const more=document.getElementById(&apos;lnav-more&apos;); if(more) more.classList.add(&apos;active&apos;); }
+}
+
+function toggleLnavMore(){
+  const menu=document.getElementById(&apos;lnavMoreMenu&apos;);
+  if(!menu) return;
+  const open = menu.style.display===&apos;flex&apos;;
+  menu.style.display = open ? &apos;none&apos; : &apos;flex&apos;;
+}
+function hideLnavMore(){
+  const menu=document.getElementById(&apos;lnavMoreMenu&apos;);
+  if(menu) menu.style.display=&apos;none&apos;;
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -3360,6 +3523,9 @@ async function loadDashboard(){
   // Badge sidebar
   if(actives.length>0){document.getElementById(&apos;missionsCount&apos;).style.display=&apos;flex&apos;;document.getElementById(&apos;missionsCount&apos;).textContent=actives.length;}
   else document.getElementById(&apos;missionsCount&apos;).style.display=&apos;none&apos;;
+  // Badge nav mobile
+  const lnavBadge=document.getElementById(&apos;lnavMissionsCount&apos;);
+  if(lnavBadge){lnavBadge.style.display=actives.length>0?&apos;flex&apos;:&apos;none&apos;;lnavBadge.textContent=actives.length;}
 
   const container=document.getElementById(&apos;dashMissions&apos;);
   const recents=actives.slice(0,3);
@@ -3684,7 +3850,11 @@ function handleWS(msg){
   if(msg.event===&apos;new_message&apos;&&msg.data.is_from_admin){
     const onChat=document.getElementById(&apos;page-chat&apos;).classList.contains(&apos;active&apos;);
     appendMsg(msg.data.message,true,msg.data.created_at);
-    if(!onChat){document.getElementById(&apos;chatBadgeSide&apos;).style.display=&apos;flex&apos;;toast(`Admin : ${msg.data.message.substring(0,40)}…`,&apos;info&apos;);}
+    if(!onChat){
+      document.getElementById(&apos;chatBadgeSide&apos;).style.display=&apos;flex&apos;;
+      const lb=document.getElementById(&apos;lnavChatBadge&apos;);if(lb)lb.style.display=&apos;flex&apos;;
+      toast(`Admin : ${msg.data.message.substring(0,40)}…`,&apos;info&apos;);
+    }
   }
   if(msg.event===&apos;order_status_updated&apos;) loadDashboard();
 }
