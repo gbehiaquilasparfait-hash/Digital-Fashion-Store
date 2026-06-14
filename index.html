@@ -2,22 +2,283 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>Plateforme Unifiée</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Digital Fashion Store — Choisir mon espace</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
-body{font-family:Arial,sans-serif;margin:20px}
-.role{display:none}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0f;--bg2:#111118;--surface:#1e1e2e;--border:#2a2a3e;
+  --text:#f0eff8;--text2:#9896b0;
+  --gold:#d4af6e;--accent:#c9a96e;--accent2:#e8c99a;
+  --rose:#e8879a;--green:#4ecb7a;
+  --font-display:'Playfair Display',serif;--font-body:'DM Sans',sans-serif;
+  --radius:20px;--shadow:0 24px 64px rgba(0,0,0,.5);
+}
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--font-body);background:var(--bg);color:var(--text);display:flex;flex-direction:column}
+
+/* ── LANDING ── */
+#landing{
+  position:fixed;inset:0;z-index:9000;
+  background:var(--bg);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:24px;
+  transition:opacity .5s ease,transform .5s ease;
+}
+#landing.hidden{opacity:0;pointer-events:none;transform:scale(1.03)}
+
+/* ambient glow */
+#landing::before{
+  content:'';position:absolute;inset:0;pointer-events:none;
+  background:
+    radial-gradient(ellipse 60% 50% at 70% 40%, rgba(201,169,110,.07), transparent),
+    radial-gradient(ellipse 50% 40% at 20% 70%, rgba(232,135,154,.05), transparent);
+}
+
+.land-logo{
+  font-family:var(--font-display);font-size:clamp(1.4rem,3vw,2rem);
+  font-style:italic;
+  background:linear-gradient(135deg,var(--gold),var(--accent2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  margin-bottom:8px;text-align:center;
+  animation:fadeUp .6s ease both;
+}
+.land-eyebrow{
+  font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--text2);margin-bottom:40px;text-align:center;
+  animation:fadeUp .6s .1s ease both;
+}
+.land-title{
+  font-family:var(--font-display);
+  font-size:clamp(1.8rem,4vw,3.2rem);
+  font-weight:700;line-height:1.15;
+  text-align:center;margin-bottom:14px;max-width:560px;
+  animation:fadeUp .6s .15s ease both;
+}
+.land-title em{color:var(--accent);font-style:italic}
+.land-sub{
+  color:var(--text2);font-size:1rem;text-align:center;
+  margin-bottom:52px;max-width:420px;line-height:1.65;
+  animation:fadeUp .6s .2s ease both;
+}
+
+/* role cards */
+.role-cards{
+  display:flex;gap:20px;flex-wrap:wrap;justify-content:center;
+  max-width:820px;width:100%;
+  animation:fadeUp .6s .3s ease both;
+}
+.role-card{
+  flex:1;min-width:220px;max-width:260px;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:32px 24px 28px;
+  cursor:pointer;position:relative;overflow:hidden;
+  transition:transform .3s ease,border-color .3s ease,box-shadow .3s ease;
+  text-align:center;
+}
+.role-card::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(135deg,rgba(201,169,110,.06),transparent);
+  opacity:0;transition:opacity .3s;
+}
+.role-card:hover{
+  transform:translateY(-6px);
+  border-color:var(--accent);
+  box-shadow:0 20px 60px rgba(0,0,0,.4),0 0 0 1px rgba(201,169,110,.2);
+}
+.role-card:hover::before{opacity:1}
+.role-card:active{transform:translateY(-2px)}
+
+.rc-icon{
+  font-size:2.4rem;margin-bottom:16px;display:block;
+  filter:drop-shadow(0 4px 12px rgba(0,0,0,.4));
+  transition:transform .3s;
+}
+.role-card:hover .rc-icon{transform:scale(1.12)}
+.rc-name{
+  font-family:var(--font-display);font-size:1.25rem;font-weight:700;
+  margin-bottom:8px;
+}
+.rc-desc{color:var(--text2);font-size:.82rem;line-height:1.55;margin-bottom:20px}
+.rc-btn{
+  display:inline-flex;align-items:center;gap:6px;
+  background:linear-gradient(135deg,var(--gold),var(--accent2));
+  color:#0a0a0f;border:none;cursor:pointer;
+  padding:9px 22px;border-radius:50px;
+  font-family:var(--font-body);font-weight:700;font-size:.82rem;
+  transition:box-shadow .3s,transform .2s;
+}
+.role-card:hover .rc-btn{box-shadow:0 8px 24px rgba(201,169,110,.35)}
+.rc-badge{
+  position:absolute;top:16px;right:16px;
+  font-size:.65rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  padding:3px 9px;border-radius:50px;
+}
+.rc-badge-new{background:rgba(201,169,110,.15);color:var(--accent)}
+.rc-badge-pro{background:rgba(78,203,122,.12);color:var(--green)}
+
+/* divider */
+.land-divider{
+  display:flex;align-items:center;gap:16px;
+  margin:44px 0 20px;max-width:820px;width:100%;
+  animation:fadeUp .6s .4s ease both;
+}
+.land-divider::before,.land-divider::after{
+  content:'';flex:1;height:1px;background:var(--border);
+}
+.land-divider span{color:var(--text2);font-size:.75rem;letter-spacing:.1em;text-transform:uppercase}
+
+/* bottom note */
+.land-note{
+  color:var(--text2);font-size:.78rem;text-align:center;
+  animation:fadeUp .6s .45s ease both;
+}
+.land-note a{color:var(--accent);text-decoration:none}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── APP SHELL (shows after selection) ── */
+#appShell{height:100%;display:flex;flex-direction:column}
+.role{display:none;flex:1}
+iframe{border:none;width:100%;height:100%;display:block}
+
+/* thin top bar while app is active */
+#topBar{
+  display:none;
+  background:rgba(10,10,15,.97);border-bottom:1px solid var(--border);
+  padding:8px 20px;align-items:center;gap:12px;flex-shrink:0;
+  z-index:100;
+}
+#topBar.visible{display:flex}
+#topBar .tb-logo{
+  font-family:var(--font-display);font-size:1rem;font-style:italic;
+  background:linear-gradient(135deg,var(--gold),var(--accent2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+#topBar .tb-role{
+  font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--text2);margin-left:4px;
+}
+#topBar .tb-back{
+  margin-left:auto;background:none;border:1px solid var(--border);
+  color:var(--text2);cursor:pointer;padding:5px 14px;border-radius:50px;
+  font-family:var(--font-body);font-size:.78rem;transition:all .2s;
+}
+#topBar .tb-back:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ── MOBILE RESPONSIVE ── */
+@media (max-width: 600px) {
+  html,body{overflow-y:auto}
+
+  #landing{
+    justify-content:flex-start;
+    padding:32px 20px 40px;
+    overflow-y:auto;
+  }
+
+  .land-logo{font-size:1.5rem;margin-bottom:6px}
+  .land-eyebrow{font-size:.65rem;margin-bottom:24px}
+  .land-title{font-size:1.8rem;margin-bottom:10px}
+  .land-sub{font-size:.88rem;margin-bottom:32px}
+
+  /* Stack cards vertically on mobile */
+  .role-cards{
+    flex-direction:column;
+    gap:12px;
+    width:100%;
+  }
+  .role-card{
+    min-width:unset;max-width:100%;
+    padding:20px 20px 18px;
+    display:flex;align-items:center;gap:16px;
+    text-align:left;
+  }
+  /* icon left side */
+  .rc-icon{
+    font-size:2rem;margin-bottom:0;flex-shrink:0;
+  }
+  .rc-card-body{flex:1;min-width:0}
+  .rc-name{font-size:1.1rem;margin-bottom:4px}
+  .rc-desc{font-size:.78rem;margin-bottom:12px;line-height:1.45}
+  .rc-badge{top:12px;right:12px;font-size:.6rem}
+  .rc-btn{padding:8px 18px;font-size:.78rem}
+
+  .land-divider{margin:28px 0 14px}
+  .land-note{font-size:.75rem}
+
+  /* Top bar on mobile */
+  #topBar{padding:10px 14px}
+  #topBar .tb-logo{font-size:.9rem}
+  #topBar .tb-role{font-size:.65rem}
+  #topBar .tb-back{padding:4px 10px;font-size:.72rem}
+}
+
+@media (max-width: 380px) {
+  .land-title{font-size:1.55rem}
+  .rc-card-body .rc-desc{display:none}
+  .role-card{padding:16px}
+}
+
+@media (max-width: 600px) {
+  /* When in app mode, prevent body scroll and fill viewport */
+  body.in-app{overflow:hidden}
+  #appShell{height:100vh;overflow:hidden}
+  .role iframe{height:calc(100vh - 46px) !important}
+}
 </style>
 </head>
 <body>
-<h1>Plateforme Unifiée</h1>
 
-<label>Choisissez votre rôle :</label>
-<select id="role" onchange="switchRole()">
-<option value="">-- Sélectionner --</option>
-<option value="client">Client</option>
-<option value="marchand">Marchand</option>
-<option value="livreur">Livreur</option>
-</select>
+<!-- ── LANDING SCREEN ── -->
+<div id="landing">
+  <div class="land-logo">Digital Fashion Store</div>
+  <div class="land-eyebrow">Plateforme de commerce unifiée</div>
+  <h1 class="land-title">Qui êtes-vous <em>aujourd'hui</em>&nbsp;?</h1>
+  <p class="land-sub">Choisissez votre espace pour accéder à votre tableau de bord personnalisé.</p>
+
+  <div class="role-cards">
+    <div class="role-card" onclick="enterRole('client')">
+      <span class="rc-badge rc-badge-new">Boutique</span>
+      <span class="rc-icon">🛍️</span>
+      <div class="rc-card-body">
+        <div class="rc-name">Client</div>
+        <p class="rc-desc">Parcourez les collections, gérez votre panier et suivez vos commandes en temps réel.</p>
+        <button class="rc-btn">Entrer <span>→</span></button>
+      </div>
+    </div>
+
+    <div class="role-card" onclick="enterRole('marchand')">
+      <span class="rc-badge rc-badge-pro">Pro</span>
+      <span class="rc-icon">🏪</span>
+      <div class="rc-card-body">
+        <div class="rc-name">Marchand</div>
+        <p class="rc-desc">Gérez votre catalogue, vos stocks, vos commandes et générez vos QR codes de livraison.</p>
+        <button class="rc-btn">Entrer <span>→</span></button>
+      </div>
+    </div>
+
+    <div class="role-card" onclick="enterRole('livreur')">
+      <span class="rc-icon">🚚</span>
+      <div class="rc-card-body">
+        <div class="rc-name">Livreur</div>
+        <p class="rc-desc">Consultez vos missions assignées, scannez les QR codes et confirmez vos livraisons.</p>
+        <button class="rc-btn">Entrer <span>→</span></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="land-divider"><span>Administration</span></div>
+  <p class="land-note">Accès administrateur : <a href="/admin">panel d'administration →</a></p>
+</div>
+
+<!-- ── APP SHELL ── -->
+<div id="appShell">
+  <div id="topBar">
+    <span class="tb-logo">DFS</span>
+    <span class="tb-role" id="topBarRole"></span>
+    <button class="tb-back" onclick="goBack()">← Changer d'espace</button>
+  </div>
 
 <div id="client" class="role">
 <h2>Espace Client</h2>
@@ -1212,7 +1473,7 @@ function toast(msg,type=&apos;info&apos;){
 </script>
 </body>
 </html>
-' width="100%" height="900"></iframe>
+' width="100%" style="height:calc(100vh - 42px);border:none"></iframe>
 </div>
 
 <div id="marchand" class="role">
@@ -2602,7 +2863,7 @@ function toast(msg,type=&apos;info&apos;){
 </script>
 </body>
 </html>
-' width="100%" height="900"></iframe>
+' width="100%" style="height:calc(100vh - 42px);border:none"></iframe>
 </div>
 
 <div id="livreur" class="role">
@@ -3439,15 +3700,40 @@ function toast(msg,type=&apos;info&apos;){
 </script>
 </body>
 </html>
-' width="100%" height="900"></iframe>
+' width="100%" style="height:calc(100vh - 42px);border:none"></iframe>
 </div>
 
 <script>
-function switchRole(){
- document.querySelectorAll('.role').forEach(x=>x.style.display='none');
- let r=document.getElementById('role').value;
- if(r) document.getElementById(r).style.display='block';
+const roleLabels = {client:'Espace Client',marchand:'Espace Marchand',livreur:'Espace Livreur'};
+
+function enterRole(r){
+  document.body.classList.add('in-app');
+  document.getElementById('landing').classList.add('hidden');
+  document.querySelectorAll('.role').forEach(x=>x.style.display='none');
+  const panel = document.getElementById(r);
+  if(panel){
+    panel.style.display='block';
+    const iframe = panel.querySelector('iframe');
+    if(iframe) iframe.style.height = 'calc(100vh - 42px)';
+  }
+  const tb = document.getElementById('topBar');
+  tb.classList.add('visible');
+  document.getElementById('topBarRole').textContent = roleLabels[r] || r;
+  sessionStorage.setItem('dfs_role', r);
 }
+
+function goBack(){
+  document.body.classList.remove('in-app');
+  document.querySelectorAll('.role').forEach(x=>x.style.display='none');
+  document.getElementById('topBar').classList.remove('visible');
+  document.getElementById('landing').classList.remove('hidden');
+  sessionStorage.removeItem('dfs_role');
+}
+
+(function(){
+  const r = sessionStorage.getItem('dfs_role');
+  if(r) enterRole(r);
+})();
 </script>
 </body>
 </html>
